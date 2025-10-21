@@ -12,7 +12,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
     TypeOrmModule.forRoot(typeOrmConfig), 
     UsersModule, 
     PropertiesModule, 
-    RequestsModule, 
-    AuthModule],
+    RequestsModule, AuthModule],
 })
 export class AppModule {}
