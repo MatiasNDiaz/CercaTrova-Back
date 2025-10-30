@@ -1,24 +1,18 @@
 // src/modules/users/dto/create-user.dto.ts
+import { IsString, IsEmail, IsOptional, IsBoolean, IsDate, IsNumber, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { IsString, IsEmail, IsOptional, IsBoolean, IsDate, IsNumber } from 'class-validator';
 
-export class CreateUserDto {
+export class RegisterDto {
   @IsOptional() // Se genera automáticamente en la DB
   @IsNumber()
   id?: number;
 
-  
-  @Transform(({value}) => {value.trim})
   @IsString()
   name: string;
 
-  
-  @Transform(({value}) => {value.trim})
   @IsString()
   surname: string;
 
-  
-  @Transform(({value}) => {value.trim})
   @IsString() // Mejor usar string por posibles ceros o códigos de país
   phone: string;
 
@@ -26,17 +20,13 @@ export class CreateUserDto {
   @IsString()
   photo?: string;
 
-  @Transform(({ value }) => value.trim().toLowerCase())
+  @Transform(({ value }) => value?.trim().toLowerCase())
   @IsEmail()
   email: string;
-  
-  @Transform(({value}) => {value.trim})
-  @IsString()
-  password: string;
 
-  @IsOptional()
-  @IsBoolean()
-  isAdmin?: boolean;
+  @IsString()
+  @MinLength(5)
+  password: string;
 
   @IsOptional()
   @IsDate()

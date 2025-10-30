@@ -7,6 +7,7 @@ import { Rating } from 'src/modules/ratings/entities/rating.entity';
 import { SearchPreference } from 'src/modules/search-preferences/entities/search-preference.entity';
 import { Comment } from 'src/modules/comments/entities/comment.entity';
 import { Notification } from 'src/modules/notifications/entities/notification.entity';
+import { Role } from '../enums/role.enum';
 
 @Entity('users')
 export class User {
@@ -31,8 +32,12 @@ export class User {
     @Column()
     password: string;
 
-    @Column({ default: false })
-    isAdmin: boolean;
+    @Column({
+    type: 'enum',
+    enum: Role,
+    default: Role.USER,
+    })
+    role: Role;
 
     @CreateDateColumn()
     createdAt: Date;

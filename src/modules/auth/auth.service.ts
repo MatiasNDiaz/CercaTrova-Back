@@ -1,26 +1,64 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
+import { CreateUserDto } from '../users/dto/create-user.dto';
+import * as bcrypt from 'bcrypt';
+import { LoginDto } from './dto/login-auth.dto';
+import { JwtService } from '@nestjs/jwt';
+
 
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
+  constructor(
+    private readonly userService:UsersService,
+    private readonly jwtService: JwtService
+  ){}
+
+  // REGISTER
+  async register(registerData: CreateUserDto) {
+    // validacion de usuario existente
+    const userExist = await this.userService.findUserByEmail(registerData.email)
+    if(userExist) throw new BadRequestException("Usuario ya existente");
+
+    // Encriptar la contraseña del usuario
+    const hashedPassword = await bcrypt.hash(registerData.password, 10);
+    registerData.password = hashedPassword;
+
+    // creamos el usuario llamando la funcion de crear el usuario de userService
+    const createdUser = await this.userService.createUser(registerData);
+    
+    // Oculatamos la contraseña para que no quede a la vista 
+    const {password, ...userWithoutPass} = createdUser
+
+    // retornamos el usuario sin la contraseña
+    return userWithoutPass
   }
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  // LOGIN
+  async login(loginData:LoginDto){
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+    // validacion de usuario existente
+    const userExist = await this.userService.findUserByEmail(loginData.email)
+    if(!userExist) throw new BadRequestException("Credenciales Invalidas");
+    
+    // comparamos la contraseña que envíe el usuario al loguearse, con la contraseña que está hasheada en la base de datos del mismo usaurio
+    const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password)
+    if (!isPasswordValid) throw new BadRequestException("Credenciales inválidas");
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+    const payload = { 
+      email: userExist.email, 
+      sub: userExist.id,
+      role: userExist.role 
+    };
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    // 
+    const token = this.jwtService.sign(payload);
+
+    const { password, ...userWithoutPass } = userExist;
+    
+    return {
+      message: "Login exitoso",
+      user: userWithoutPass,
+      token
+    }
   }
 }

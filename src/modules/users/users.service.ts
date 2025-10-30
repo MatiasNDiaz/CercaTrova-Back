@@ -17,6 +17,7 @@ export class UsersService {
     try {
       const user:User = this.userRepository.create(createUser);
       return await this.userRepository.save(user);
+
     } catch (error) {
       // Manejo de error, por ejemplo:
       throw new Error('No se pudo crear el usuario: ' + error.message);
@@ -44,7 +45,7 @@ export class UsersService {
   }
 
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
-    const user = await this.userRepository.findOneBy({ id });
+    const user: User | null = await this.userRepository.findOneBy({ id });
     if (!user) throw new Error('Usuario no encontrado');
 
     Object.assign(user, updateUserDto); // actualiza los campos
@@ -56,5 +57,9 @@ export class UsersService {
     if (result.affected === 0) throw new Error('Usuario no encontrado');
   }
 
+  // Funcion para verificar si existe un usuario por su email:
+  async findUserByEmail(email: string): Promise<User | null> {
+  return await this.userRepository.findOneBy({ email });
+  }
 }
 
