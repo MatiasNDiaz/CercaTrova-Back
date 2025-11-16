@@ -58,7 +58,8 @@ export class AuthService {
     return {
       message: "Login exitoso",
       user: userWithoutPass,
-      token
+      token,
+      typ: 'access'
     }
   }
 }

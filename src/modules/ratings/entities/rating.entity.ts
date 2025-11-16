@@ -8,11 +8,11 @@ export class Rating {
   id: number;
 
   @Column()
-  value: number;
+  score: number;
 
-  @ManyToOne(() => User, user => user.ratings)
+  @ManyToOne(() => User, user => user.ratings, { onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Property, property => property.ratings)
+  @ManyToOne(() => Property, property => property.ratings, { onDelete: 'CASCADE' })
   property: Property;
-}
+} 

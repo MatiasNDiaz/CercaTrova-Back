@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColumn } from "typeorm"
+import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColumn, UpdateDateColumn, CreateDateColumn } from "typeorm"
 import { User } from "src/modules/users/entities/user.entity";
 import { Request } from '../../requests/entities/request.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
@@ -13,7 +13,7 @@ export class Property {
     @Column()
     title: string;
 
-    @Column({ unique: true })
+    @Column()
     description: string;
 
     @Column()
@@ -47,12 +47,12 @@ export class Property {
     image_url: string;
 
     @Column()
-    video_url: number;
+    video_url: string;
 
-    @Column()
+    @CreateDateColumn()
     created_at: Date;
 
-    @Column()
+    @UpdateDateColumn()
     updated_at: Date;
 
     // Relaciones
@@ -67,7 +67,6 @@ export class Property {
 
     @OneToMany(() => Favorite, favorite => favorite.property)
     favorites: Favorite[];
-
     @OneToMany(() => Request, request => request.property)
     requests: Request[];
 

@@ -39,6 +39,9 @@ export class User {
     })
     role: Role;
 
+    // @Column({ nullable: true, select: false })
+    // refreshToken?: string | null; // hashed refresh token - select: false para que no venga por defecto en queries
+
     @CreateDateColumn()
     createdAt: Date;
 

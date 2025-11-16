@@ -1,24 +1,19 @@
 // src/modules/users/dto/create-user.dto.ts
 import { Transform } from 'class-transformer';
-import { IsString, IsEmail, IsOptional, IsBoolean, IsDate, IsNumber } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsEnum } from 'class-validator';
+import { Role } from '../enums/role.enum';
 
 export class CreateUserDto {
-  @IsOptional() // Se genera automáticamente en la DB
-  @IsNumber()
-  id?: number;
 
-  
-  @Transform(({value}) => {value.trim})
+  @Transform(({value}) => {value?.trim()})
   @IsString()
   name: string;
 
-  
-  @Transform(({value}) => {value.trim})
+  @Transform(({value}) => {value?.trim()})
   @IsString()
   surname: string;
-
   
-  @Transform(({value}) => {value.trim})
+  @Transform(({value}) => {value?.trim()})
   @IsString() // Mejor usar string por posibles ceros o códigos de país
   phone: string;
 
@@ -26,23 +21,16 @@ export class CreateUserDto {
   @IsString()
   photo?: string;
 
-  @Transform(({ value }) => value.trim().toLowerCase())
+  @Transform(({ value }) => value?.trim().toLowerCase())
   @IsEmail()
   email: string;
   
-  @Transform(({value}) => {value.trim})
+  @Transform(({value}) => {value?.trim()})
   @IsString()
   password: string;
 
   @IsOptional()
-  @IsBoolean()
-  isAdmin?: boolean;
+  @IsEnum(Role)
+  role?: Role;
 
-  @IsOptional()
-  @IsDate()
-  createdAt?: Date;
-
-  @IsOptional()
-  @IsDate()
-  updatedAt?: Date;
 }

@@ -9,7 +9,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post("register")
-  register(@Body() registerData: RegisterDto) {
+    register(@Body() registerData: RegisterDto) {
     return this.authService.register(registerData)
   }
 
@@ -18,5 +18,4 @@ export class AuthController {
     return this.authService.login(loginData)
 
   }
-
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -7,7 +7,6 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
-
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -17,9 +16,7 @@ export class UsersService {
     try {
       const user:User = this.userRepository.create(createUser);
       return await this.userRepository.save(user);
-
     } catch (error) {
-      // Manejo de error, por ejemplo:
       throw new Error('No se pudo crear el usuario: ' + error.message);
     }
   }
@@ -46,7 +43,7 @@ export class UsersService {
 
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const user: User | null = await this.userRepository.findOneBy({ id });
-    if (!user) throw new Error('Usuario no encontrado');
+    if (!user) throw new BadRequestException ('Usuario no encontrado');
 
     Object.assign(user, updateUserDto); // actualiza los campos
     return await this.userRepository.save(user);
@@ -54,7 +51,7 @@ export class UsersService {
 
   async deleteUser(id: number): Promise<void> {
     const result = await this.userRepository.delete(id);
-    if (result.affected === 0) throw new Error('Usuario no encontrado');
+    if (result.affected === 0) throw new BadRequestException('Usuario no encontrado');
   }
 
   // Funcion para verificar si existe un usuario por su email:
@@ -62,4 +59,4 @@ export class UsersService {
   return await this.userRepository.findOneBy({ email });
   }
 }
-
+ 

@@ -1,26 +1,47 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateRatingDto } from './dto/create-rating.dto';
 import { UpdateRatingDto } from './dto/update-rating.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Rating } from './entities/rating.entity';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class RatingsService {
-  create(createRatingDto: CreateRatingDto) {
-    return 'This action adds a new rating';
+  constructor(
+    @InjectRepository(Rating)
+    private readonly ratingRepo: Repository<Rating>,
+  ) {}
+
+  async rateProperty(userId: number, propertyId: number, score: number) {
+
+  if (score < 1 || score > 5) {
+    throw new BadRequestException('El puntaje debe ser entre 1 y 5');
   }
 
-  findAll() {
-    return `This action returns all ratings`;
+  const existingRating = await this.ratingRepo.findOne({
+    where: {
+      user: { id: userId },
+      property: { id: propertyId },
+    },
+    relations: ['user', 'property'],
+  });
+
+  if (existingRating) {
+    // ✅ Ya calificó → actualizamos
+    existingRating.score = score;
+    return await this.ratingRepo.save(existingRating);
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} rating`;
-  }
+  // 🆕 Primera vez → creamos
+  const rating = this.ratingRepo.create({
+    score,
+    user: { id: userId },
+    property: { id: propertyId },
+  });
 
-  update(id: number, updateRatingDto: UpdateRatingDto) {
-    return `This action updates a #${id} rating`;
-  }
+  return await this.ratingRepo.save(rating);
+}
 
-  remove(id: number) {
-    return `This action removes a #${id} rating`;
-  }
+  
+
 }
