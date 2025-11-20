@@ -8,6 +8,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { BootstrapService } from './common/bootstraps/bootstrap.service';
 import { User } from './modules/users/entities/user.entity';
+import { TypeOfPropertyModule } from './modules/typeOfProperty/typeOfProperty.module';
 
 @Module({
   // La propiedad 'imports' define los módulos que este módulo necesita.
@@ -39,7 +40,8 @@ import { User } from './modules/users/entities/user.entity';
     UsersModule, 
     PropertiesModule, 
     RequestsModule, 
-    AuthModule
+    AuthModule,
+    TypeOfPropertyModule
   ],
   providers: [BootstrapService],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,

@@ -4,6 +4,8 @@ import { Request } from '../../requests/entities/request.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
 import { Rating } from 'src/modules/ratings/entities/rating.entity';
 import { Comment } from 'src/modules/comments/entities/comment.entity';
+import { PropertyType } from "src/modules/typeOfProperty/entities/typeOfProperty.entity";
+import { PropertyImages } from "src/modules/ImagesProperty/entities/ImagesPropertyEntity";
 
 @Entity('property')
 export class Property {
@@ -15,9 +17,6 @@ export class Property {
 
     @Column()
     description: string;
-
-    @Column()
-    type: string;
 
     @Column()
     zone: string;
@@ -43,12 +42,6 @@ export class Property {
     @Column()
     status: string;
 
-    @Column()
-    image_url: string;
-
-    @Column()
-    video_url: string;
-
     @CreateDateColumn()
     created_at: Date;
 
@@ -56,6 +49,12 @@ export class Property {
     updated_at: Date;
 
     // Relaciones
+    @OneToMany(() => PropertyImages, images => images.property, {
+    cascade: true,
+    onDelete: 'CASCADE'
+    })
+    images: PropertyImages[];
+
     @ManyToOne(() => User, user => user.properties)
     agent: User;
 
@@ -74,4 +73,7 @@ export class Property {
     
     @JoinColumn({ name: 'referredById' })
     referredBy?: User;
+
+    @ManyToOne(() => PropertyType, { eager: true })
+    typeOfProperty: PropertyType;
 }

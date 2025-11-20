@@ -3,9 +3,16 @@ import { PropertiesService } from './properties.service';
 import { PropertiesController } from './properties.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Property } from './entities/property.entity';
+import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
+import { ImagesPropertyModule } from '../ImagesProperty/images-property.module';
+import { CloudinaryModule } from 'src/common/Cloudinary/cloudinary.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Property])],
+  imports: [
+    TypeOrmModule.forFeature([Property, PropertyType]),
+    ImagesPropertyModule,
+    CloudinaryModule,   // 👈 IMPORTA ESTE MÓDULO
+  ],
   controllers: [PropertiesController],
   providers: [PropertiesService],
 })

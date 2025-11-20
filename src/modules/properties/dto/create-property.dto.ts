@@ -3,9 +3,9 @@ import {
   IsNotEmpty,
   IsNumber,
   IsBoolean,
-  IsOptional,
-  IsUrl,
+  IsInt,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreatePropertyDto {
   @IsString()
@@ -16,41 +16,39 @@ export class CreatePropertyDto {
   @IsNotEmpty()
   description: string;
 
-  @IsString()
-  @IsNotEmpty()
-  type: string;
+  @Type(() => Number)
+  @IsInt()
+  typeOfPropertyId: number;
 
   @IsString()
   @IsNotEmpty()
   zone: string;
 
+  @Type(() => Number)
   @IsNumber()
   rooms: number;
 
+  @Type(() => Number)
   @IsNumber()
   bathrooms: number;
 
+  @Type(() => Boolean)
   @IsBoolean()
   garage: boolean;
 
+  @Type(() => Boolean)
   @IsBoolean()
   patio: boolean;
 
+  @Type(() => Number)
   @IsNumber()
   antiquity: number;
 
+  @Type(() => Number)
   @IsNumber()
   price: number;
 
   @IsString()
   @IsNotEmpty()
   status: string;
-
-  @IsUrl()
-  @IsNotEmpty()
-  image_url: string;
-
-  @IsUrl()
-  @IsOptional()
-  video_url?: string;
 }

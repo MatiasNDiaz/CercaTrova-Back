@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsNumber, IsBoolean, IsOptional, IsUrl, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsBoolean, IsOptional, IsUrl, Min, IsInt } from 'class-validator';
 
 export class UpdatePropertyDto {
   /** 🏠 Título de la propiedad */
@@ -11,15 +11,13 @@ export class UpdatePropertyDto {
   @IsNotEmpty({ message: 'La descripción es obligatoria' })
   description: string;
 
-  /** 🏘️ Tipo de propiedad (casa, departamento, terreno, etc.) */
-  @IsString()
-  @IsNotEmpty({ message: 'El tipo es obligatorio' })
-  type: string;
-
   /** 📍 Zona o ubicación general */
   @IsString()
   @IsNotEmpty({ message: 'La zona es obligatoria' })
   zone: string;
+
+  @IsInt()
+  typeOfPropertyId: number;
 
   /** 🚪 Cantidad de habitaciones */
   @IsNumber()
@@ -54,14 +52,4 @@ export class UpdatePropertyDto {
   @IsNotEmpty({ message: 'El estado es obligatorio' })
   status: string;
 
-  /** 🖼️ URL de la imagen principal */
-  @IsString()
-  @IsUrl({}, { message: 'Debe ser una URL válida' })
-  image_url: string;
-
-  /** 🎥 URL del video (opcional) */
-  @IsOptional()
-  @IsString()
-  @IsUrl({}, { message: 'Debe ser una URL válida' })
-  video_url?: string;
 }
