@@ -1,3 +1,4 @@
+// src/modules/properties/properties.controller.ts
 import {
   Controller,
   Get,
@@ -10,7 +11,7 @@ import {
   Query,
   UseInterceptors,
   UploadedFiles,
-  BadRequestException
+  BadRequestException,
 } from '@nestjs/common';
 import { PropertiesService } from './properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
@@ -28,69 +29,76 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 export class PropertiesController {
   constructor(private readonly propertiesService: PropertiesService) {}
 
-  // 🟢 Obtener todas las Propiedades
   @Public()
   @Get()
   findAll() {
     return this.propertiesService.findAll();
   }
-  
-  // 🟢 Obtener una propiedad
+
   @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.propertiesService.findOne(+id);
   }
 
-  // 🟢 Obetener propiedades a travez de filtros
   @Public()
   @Get('filter')
   filter(@Query() filters: PropertyFilterDto) {
     return this.propertiesService.filter(filters);
   }
 
-  // 🟢 Crear una propiedad con sus imagenes
+  // Crear propiedad + imágenes
   @Roles(Role.ADMIN)
   @Post()
-@UseInterceptors(
-  FilesInterceptor("images", 10) // "images" debe coincidir con los nombres enviados desde frontend
-)
-async create(
-  @Body("data") rawData: string,       // ⬅️ viene como string
-  @UploadedFiles() images: Express.Multer.File[],
-) {
-  let dto: CreatePropertyDto;
+  @UseInterceptors(FilesInterceptor('images', 10))
+  async create(
+    @Body('data') rawData: string,
+    @UploadedFiles() images: Express.Multer.File[],
+  ) {
+    let dto: CreatePropertyDto;
+    try {
+      dto = JSON.parse(rawData);
+    } catch {
+      throw new BadRequestException("El campo 'data' debe ser JSON válido");
+    }
 
-  try {
-    dto = JSON.parse(rawData);  // ⬅️ convierte el string a JSON
-  } catch (e) {
-    throw new BadRequestException("El campo 'data' debe ser JSON válido");
+    return this.propertiesService.createWithImages(dto, images);
   }
 
-  return this.propertiesService.createWithImages(dto, images);
-}
-
-  // 🟠 Actualizar Propiedades 
+  // PATCH: actualizar campos de property, borrar imágenes y subir nuevas (delegado)
   @Roles(Role.ADMIN)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdatePropertyDto) {
-    return this.propertiesService.update(+id, dto);
+  @UseInterceptors(FilesInterceptor('newImages', 10))
+  async update(
+    @Param('id') id: string,
+    @Body('data') rawData: string,
+    @UploadedFiles() newImages: Express.Multer.File[],
+  ) {
+    let dto: UpdatePropertyDto;
+    try {
+      dto = JSON.parse(rawData);
+    } catch {
+      throw new BadRequestException("El campo 'data' debe ser un JSON válido");
+    }
+
+    return this.propertiesService.update(
+      +id,
+      dto,
+      newImages,
+      dto.deleteImages ?? [],
+    );
   }
 
-  // 🔴 Eliminar propiedades 
   @Roles(Role.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.propertiesService.remove(+id);
   }
 
-  // 🔴 Eliminar las imagenes de una propiedad
+  // Si querés mantener endpoint aquí (opcional) delega al service de images
   @Roles(Role.ADMIN)
   @Delete('image/:id')
-  async deleteImage(
-    @Param('id') id: number,
-  ) {
+  async deleteImage(@Param('id') id: number) {
     return this.propertiesService.deleteImage(id);
   }
-
 }

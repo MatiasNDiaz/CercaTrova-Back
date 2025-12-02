@@ -1,3 +1,4 @@
+// src/modules/properties/properties.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 import { PropertyFilterDto } from './dto/property-filter.dto';
 import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
 import { PropertyImages } from '../ImagesProperty/entities/ImagesPropertyEntity';
+import { PropertyImagesService } from '../ImagesProperty/propertyImages.service'; // <- asegurate ruta correcta
 
 @Injectable()
 export class PropertiesService {
@@ -21,40 +23,41 @@ export class PropertiesService {
 
     @InjectRepository(PropertyType)
     private readonly propertyTypeRepo: Repository<PropertyType>,
-    
+
     @InjectRepository(PropertyImages)
     private readonly propertyImageRepository: Repository<PropertyImages>,
-    
+
     private readonly cloudinaryService: CloudinaryService,
+
+    private readonly propertyImagesService: PropertyImagesService, // inyectado
   ) {}
 
-  // 🟡 Obtener todas las propiedades 
+  // ... findAll & findOne se mantienen sin cambios (igual que tenías)
   async findAll(): Promise<any[]> {
     try {
       const properties = await this.propertyRepo.find({
-        relations: ['agent', 'ratings', 'typeOfProperty', 'images'  ],
+        relations: ['agent', 'ratings', 'typeOfProperty', 'images'],
       });
-      
+
       const result = await Promise.all(
         properties.map(async (p) => {
           const { avg } = await this.propertyRepo
-          .createQueryBuilder('property')
-          .leftJoin('property.ratings', 'rating')
-          .select('AVG(rating.score)', 'avg')
-          .where('property.id = :id', { id: p.id })
-          .getRawOne();
-          
+            .createQueryBuilder('property')
+            .leftJoin('property.ratings', 'rating')
+            .select('AVG(rating.score)', 'avg')
+            .where('property.id = :id', { id: p.id })
+            .getRawOne();
+
           return { ...p, ratingAverage: Number(avg) || 0 };
         }),
       );
-      
+
       return result;
     } catch (e) {
       throw new BadRequestException('No se pudieron obtener las propiedades');
     }
   }
-  
-  // 🟡 Obtener una propiedad 
+
   async findOne(id: number): Promise<any> {
     const property = await this.propertyRepo.findOne({
       where: { id },
@@ -73,127 +76,120 @@ export class PropertiesService {
     if (!property) {
       throw new NotFoundException(`No existe la propiedad con ID ${id}`);
     }
-    
+
     const { avg } = await this.propertyRepo
-    .createQueryBuilder('property')
-    .leftJoin('property.ratings', 'rating')
-    .select('AVG(rating.score)', 'avg')
-    .where('property.id = :id', { id })
-    .getRawOne();
-    
+      .createQueryBuilder('property')
+      .leftJoin('property.ratings', 'rating')
+      .select('AVG(rating.score)', 'avg')
+      .where('property.id = :id', { id })
+      .getRawOne();
+
     return { ...property, ratingAverage: Number(avg) || 0 };
   }
-  
-  
-  // 🟢 Crear una propiedad + sus imagenes
-  async createWithImages(
-    dto: CreatePropertyDto,
-    images: Express.Multer.File[],
-    ) {
-    // Crear la propiedad
+
+  // -------------------------
+  // Crear property + images
+  // -------------------------
+  async createWithImages(dto: CreatePropertyDto, images: Express.Multer.File[]) {
     const property = this.propertyRepo.create(dto);
     await this.propertyRepo.save(property);
 
     if (!images || images.length === 0)
       return { ...property, images: [] };
 
-    // Subir imágenes
-    const uploads = await Promise.all(
-      images.map((file) => this.cloudinaryService.uploadImage(file)),
-    );
+    // delegamos la subida / guardado de imágenes
+    const savedImages = await this.propertyImagesService.createMany(property, images);
 
-    // Crear registros
-    const propertyImages = uploads.map((img) =>
-      this.propertyImageRepository.create({
-        property,
-        url: img.secure_url,
-        publicId: img.public_id,
-        hash: img.asset_id, // opcional: puedes usar tu hash crypto
-      }),
-    );
+    // devolver property con imágenes creadas
+    // devolver property con imágenes creadas
+return {
+  ...property,
+  images: savedImages.map(img => ({
+    id: img.id,
+    url: img.url,
+    hash: img.hash,
+    isCover: img.isCover,
+    publicId: img.publicId
+  }))
+};
 
-    await this.propertyImageRepository.save(propertyImages);
-
-    return {
-      ...property,
-      images: propertyImages,
-    };
   }
 
-  // 🟠 Actualizar datos de propiedades
-  async update(id: number, dto: UpdatePropertyDto): Promise<Property> {
-    const property = await this.findOne(id);
-    if (dto.typeOfPropertyId) {
-      const newType = await this.propertyTypeRepo.findOne({
-        where: { id: dto.typeOfPropertyId },
-      });
-
-      if (!newType) {
-        throw new NotFoundException(
-          `El tipo de propiedad con ID ${dto.typeOfPropertyId} no existe`,
-        );
-      }
-
-      property.typeOfProperty = newType;
-    }
-
-    Object.assign(property, dto);
-
-    return await this.propertyRepo.save(property);
-    } 
-
-  // 🔴 Eliminar propiedad + imágenes en BD + imágenes en Cloudinary
-  async remove(id: number) {
-    // Buscar la propiedad con sus imágenes
+  // -------------------------
+  // UPDATE property (delegando imagenes)
+  // -------------------------
+  async update(
+    id: number,
+    dto: UpdatePropertyDto,
+    newImages?: Express.Multer.File[],
+    deleteImagesIds?: number[],
+  ): Promise<Property> {
     const property = await this.propertyRepo.findOne({
       where: { id },
-      relations: ['images'], // 🔥 MUY IMPORTANTE
+      relations: ['images'],
     });
 
-    if (!property) {
-      throw new NotFoundException(`No existe la propiedad con ID ${id}`);
+    if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
+
+    // actualizar campos de propiedad
+    Object.assign(property, dto);
+
+    // eliminar imágenes (delegado)
+    if (deleteImagesIds && deleteImagesIds.length > 0) {
+      await this.propertyImagesService.deleteManyByIds(deleteImagesIds);
     }
 
-    // 1. 🔥 Borrar imágenes de Cloudinary
-    if (property.images && property.images.length > 0) {
-      for (const img of property.images) {
-        if (img.publicId) {
-          await this.cloudinaryService.deleteFile(img.publicId);
-        }
-      }
+    // crear nuevas imágenes (delegado)
+    if (newImages && newImages.length > 0) {
+      const added = await this.propertyImagesService.createMany(property, newImages);
+      // actualizar propiedad en memoria
+      property.images = [...(property.images || []), ...added];
     }
 
-    // 2. 🔥 Borrar imágenes de la BD (aunque cascade también las borra, lo hacemos manual por control)
-    await this.propertyImageRepository.delete({ property: { id } });
+    // cambiar portada (si vino en dto)
+    if (dto.setCoverImageId) {
+      await this.propertyImagesService.setAsCover(dto.setCoverImageId);
+    }
 
-    // 3. 🔥 Borrar propiedad
+    // asegurar portada (por si quedó sin portada)
+    await this.propertyImagesService.ensureCoverExists(id);
+
+    // salvar cambios de property (campos)
+    await this.propertyRepo.save(property);
+
+    // devolver la propiedad con imágenes actualizadas
+    return this.findOne(id);
+  }
+
+  // -------------------------
+  // DELETE property -> delegar eliminación de imágenes también
+  // -------------------------
+  async remove(id: number) {
+    const property = await this.propertyRepo.findOne({
+      where: { id },
+      relations: ['images'],
+    });
+
+    if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
+
+    // delegar borrado de todas las imágenes (Cloudinary + DB)
+    await this.propertyImagesService.deleteAllByPropertyId(id);
+
+    // borrar la propiedad
     await this.propertyRepo.delete(id);
+
     return { message: `Propiedad ${id} eliminada correctamente` };
   }
 
-    // 🔴 Eliminar las imagenes de una propiedad
-    async deleteImage(imageId: number) {
-    const image = await this.propertyImageRepository.findOne({
-      where: { id: imageId },
-    });
-
-    if (!image) {
-      throw new NotFoundException('Imagen no encontrada');
-    }
-
-    // 1. Borrar de Cloudinary
-    await this.cloudinaryService.deleteFile(image.publicId);
-
-    // 2. Borrar de la base de datos
-    await this.propertyImageRepository.delete(imageId);
-
-    return {
-      message: 'Imagen eliminada correctamente',
-      id: imageId,
-    };
+  // -------------------------------------------------------------
+  // eliminar una imagen individual (si todavia querés mantener endpoint en PropertiesController)
+  // -------------------------------------------------------------
+  async deleteImage(imageId: number) {
+    // delega al servicio de imágenes — esto reasignará portada si hace falta
+    return this.propertyImagesService.deleteImage(imageId);
   }
 
-  // 🔍 Filtros de propiedades (se pueden combinar los filtros)
+  // ... filter() se mantiene igual que lo tenías
   async filter(filters: PropertyFilterDto) {
     const qb = this.propertyRepo
       .createQueryBuilder('property')

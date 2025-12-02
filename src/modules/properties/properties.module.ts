@@ -11,7 +11,7 @@ import { CloudinaryModule } from 'src/common/Cloudinary/cloudinary.module';
   imports: [
     TypeOrmModule.forFeature([Property, PropertyType]),
     ImagesPropertyModule,
-    CloudinaryModule,   // 👈 IMPORTA ESTE MÓDULO
+    CloudinaryModule,
   ],
   controllers: [PropertiesController],
   providers: [PropertiesService],

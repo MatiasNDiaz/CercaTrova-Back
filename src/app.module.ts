@@ -9,6 +9,7 @@ import { ConfigModule } from '@nestjs/config';
 import { BootstrapService } from './common/bootstraps/bootstrap.service';
 import { User } from './modules/users/entities/user.entity';
 import { TypeOfPropertyModule } from './modules/typeOfProperty/typeOfProperty.module';
+import { RatingsModule } from './modules/ratings/ratings.module';
 
 @Module({
   // La propiedad 'imports' define los módulos que este módulo necesita.
@@ -41,7 +42,8 @@ import { TypeOfPropertyModule } from './modules/typeOfProperty/typeOfProperty.mo
     PropertiesModule, 
     RequestsModule, 
     AuthModule,
-    TypeOfPropertyModule
+    TypeOfPropertyModule,
+    RatingsModule
   ],
   providers: [BootstrapService],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,

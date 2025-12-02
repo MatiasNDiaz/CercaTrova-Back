@@ -52,4 +52,9 @@ export class UpdatePropertyDto {
   @IsNotEmpty({ message: 'El estado es obligatorio' })
   status: string;
 
+  @IsOptional()
+  deleteImages?: number[];
+
+  @IsOptional()
+  setCoverImageId?: number;
 }

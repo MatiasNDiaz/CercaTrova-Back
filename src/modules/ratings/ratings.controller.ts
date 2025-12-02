@@ -7,15 +7,16 @@ import { Role } from '../users/enums/role.enum';
 @Controller('ratings')
 export class RatingsController {
   constructor(private readonly ratingsService: RatingsService) {}
-    @Roles(Role.USER)
-    @Post(':propertyId')
-    @UseGuards(JwtAuthGuard) 
-  async rate(
+
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.USER)
+  @Post(':propertyId')
+  async rate( 
     @Param('propertyId', ParseIntPipe) propertyId: number,
     @Body('score') score: number,
     @Req() req
   ) {
-  const userId = req.user.id;
-  return this.ratingsService.rateProperty(userId, propertyId, score);
+    const userId = req.user.id;
+    return this.ratingsService.rateProperty(userId, propertyId, score);
   }
 }
