@@ -1,34 +1,57 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { RequestsService } from './requests.service';
-import { CreateRequestDto } from './dto/create-request.dto';
-import { UpdateRequestDto } from './dto/update-request.dto';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  BadRequestException,
+} from '@nestjs/common';
+import { UserSearchFeedbackService } from './requests.service';
+import { CreateUserSearchFeedbackDto } from './dto/create-request.dto';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { Role } from '../users/enums/role.enum';
 
-@Controller('requests')
-export class RequestsController {
-  constructor(private readonly requestsService: RequestsService) {}
+@Controller('feedback/search')
+export class UserSearchFeedbackController {
+  constructor(
+    private readonly feedbackService: UserSearchFeedbackService,
+  ) {}
 
+  
+    // --------------------------------------------------------
+    // 4) CHECK ANTI-SPAM 24 HS
+    // --------------------------------------------------------
+    @Get('check/:deviceId')
+    checkDevice(@Param('deviceId') deviceId: string) {
+      return this.feedbackService.checkDeviceCooldown(deviceId);
+    }
+  // --------------------------------------------------------
+  // 1) CREAR FEEDBACK (usuario NO logueado)
+  // --------------------------------------------------------
   @Post()
-  create(@Body() createRequestDto: CreateRequestDto) {
-    return this.requestsService.create(createRequestDto);
+  async create(@Body() dto: CreateUserSearchFeedbackDto) {
+    if (!dto.deviceId) {
+      throw new BadRequestException('deviceId es obligatorio');
+    }
+
+    return this.feedbackService.createFeedback(dto);
   }
 
+  // --------------------------------------------------------
+  // 2) OBTENER TODO EL FEEDBACK (SOLO ADMIN/AGENTE)
+  // --------------------------------------------------------
+  @Roles(Role.ADMIN)
   @Get()
-  findAll() {
-    return this.requestsService.findAll();
+  getAll() {
+    return this.feedbackService.getAllFeedback();
   }
 
+  // --------------------------------------------------------
+  // 3) OBTENER UN FEEDBACK POR ID
+  // --------------------------------------------------------
+  @Roles(Role.ADMIN)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.requestsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateRequestDto: UpdateRequestDto) {
-    return this.requestsService.update(+id, updateRequestDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.requestsService.remove(+id);
+  getOne(@Param('id') id: string) {
+    return this.feedbackService.getOneFeedback(+id);
   }
 }

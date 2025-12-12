@@ -1,7 +1,7 @@
 // src/modules/users/entities/user.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
-import { Request } from '../../requests/entities/request.entity';
+import { UserSearchFeedback } from '../../requests/entities/request.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
 import { Rating } from 'src/modules/ratings/entities/rating.entity';
 import { SearchPreference } from 'src/modules/search-preferences/entities/search-preference.entity';
@@ -64,8 +64,8 @@ export class User {
     @OneToMany(() => Notification, notification => notification.user)
     notifications: Notification[];
 
-    @OneToMany(() => Request, request => request.user)
-    requests: Request[];
+    // @OneToMany(() => Request, request => request.)
+    // requests: Request[];
 
     @OneToMany(() => Favorite, favorite => favorite.user)
     favorites: Favorite[];

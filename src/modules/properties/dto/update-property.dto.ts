@@ -47,6 +47,9 @@ export class UpdatePropertyDto {
   @Min(0)
   price: number;
 
+  @IsNumber()
+  @Min(0)
+  m2: number;
   /** 📦 Estado (disponible, reservado, vendido, etc.) */
   @IsString()
   @IsNotEmpty({ message: 'El estado es obligatorio' })

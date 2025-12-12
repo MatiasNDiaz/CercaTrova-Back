@@ -10,6 +10,14 @@ import { BootstrapService } from './common/bootstraps/bootstrap.service';
 import { User } from './modules/users/entities/user.entity';
 import { TypeOfPropertyModule } from './modules/typeOfProperty/typeOfProperty.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
+import { Favorite } from './modules/favorites/entities/favorite.entity';
+import { FavoritesModule } from './modules/favorites/favorites.module';
+import { Stat } from './modules/stats/entities/stat.entity';
+import { StatsModule } from './modules/stats/stats.module';
+import { CommentsModule } from './modules/comments/comments.module';
+import { EmailModule } from './modules/notifications/email/email.module';
+import { NotificationModule } from './modules/notifications/notifications.module';
+import { SearchPreferencesModule } from './modules/search-preferences/search-preferences.module';
 
 @Module({
   // La propiedad 'imports' define los módulos que este módulo necesita.
@@ -43,7 +51,13 @@ import { RatingsModule } from './modules/ratings/ratings.module';
     RequestsModule, 
     AuthModule,
     TypeOfPropertyModule,
-    RatingsModule
+    RatingsModule,
+    FavoritesModule,
+    StatsModule,
+    CommentsModule,
+    EmailModule,
+    NotificationModule,
+    SearchPreferencesModule,
   ],
   providers: [BootstrapService],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,

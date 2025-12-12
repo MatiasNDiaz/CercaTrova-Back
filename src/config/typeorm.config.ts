@@ -4,7 +4,7 @@ import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
 import { User } from '../modules/users/entities/user.entity';
 import { Property } from '../modules/properties/entities/property.entity';
-import { Request } from '../modules/requests/entities/request.entity';
+import { UserSearchFeedback } from '../modules/requests/entities/request.entity';
 import { Rating } from 'src/modules/ratings/entities/rating.entity';
 import { Comment } from 'src/modules/comments/entities/comment.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
@@ -12,6 +12,7 @@ import { SearchPreference } from 'src/modules/search-preferences/entities/search
 import { Notification } from 'src/modules/notifications/entities/notification.entity';
 import { PropertyType } from 'src/modules/typeOfProperty/entities/typeOfProperty.entity';
 import { PropertyImages } from 'src/modules/ImagesProperty/entities/ImagesPropertyEntity';
+import { Stat } from 'src/modules/stats/entities/stat.entity';
 // Importa más entidades según necesites
 
 dotenv.config(); 
@@ -23,7 +24,8 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    entities: [User, Property, Request, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages],
+    entities: [User, Property, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat],
    // ⚠️ Solo en desarrollo, ¡cambia a false en Producción!
     synchronize: true, 
+// dropSchema: true
 };

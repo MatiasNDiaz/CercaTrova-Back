@@ -4,8 +4,10 @@ import {
   IsNumber,
   IsBoolean,
   IsInt,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { StatusProperty } from './enumsStatusProperty';
 
 export class CreatePropertyDto {
   @IsString()
@@ -39,6 +41,10 @@ export class CreatePropertyDto {
   @Type(() => Boolean)
   @IsBoolean()
   patio: boolean;
+  
+  @Type(() => Number)
+  @IsNumber()
+  m2: number;
 
   @Type(() => Number)
   @IsNumber()
@@ -48,7 +54,7 @@ export class CreatePropertyDto {
   @IsNumber()
   price: number;
 
-  @IsString()
+  @IsEnum(StatusProperty)
   @IsNotEmpty()
-  status: string;
+  status: StatusProperty;
 }

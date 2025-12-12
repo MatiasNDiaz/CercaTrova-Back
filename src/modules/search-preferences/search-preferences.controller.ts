@@ -1,34 +1,24 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, Param } from '@nestjs/common';
 import { SearchPreferencesService } from './search-preferences.service';
 import { CreateSearchPreferenceDto } from './dto/create-search-preference.dto';
 import { UpdateSearchPreferenceDto } from './dto/update-search-preference.dto';
 
 @Controller('search-preferences')
 export class SearchPreferencesController {
-  constructor(private readonly searchPreferencesService: SearchPreferencesService) {}
+  constructor(private readonly service: SearchPreferencesService) {}
 
-  @Post()
-  create(@Body() createSearchPreferenceDto: CreateSearchPreferenceDto) {
-    return this.searchPreferencesService.create(createSearchPreferenceDto);
+  @Post(':userId')
+  create(@Param('userId') userId: number, @Body() dto: CreateSearchPreferenceDto) {
+    return this.service.create(userId, dto);
   }
 
-  @Get()
-  findAll() {
-    return this.searchPreferencesService.findAll();
+  @Patch(':userId')
+  update(@Param('userId') userId: number, @Body() dto: UpdateSearchPreferenceDto) {
+    return this.service.update(userId, dto);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.searchPreferencesService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateSearchPreferenceDto: UpdateSearchPreferenceDto) {
-    return this.searchPreferencesService.update(+id, updateSearchPreferenceDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.searchPreferencesService.remove(+id);
+  @Get(':userId')
+  getByUser(@Param('userId') userId: number) {
+    return this.service.getByUser(userId);
   }
 }

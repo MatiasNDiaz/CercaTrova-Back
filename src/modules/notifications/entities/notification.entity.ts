@@ -1,26 +1,29 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
+import { User } from 'src/modules/users/entities/user.entity';
 
 @Entity('notifications')
 export class Notification {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @ManyToOne(() => User, user => user.notifications, { onDelete: 'CASCADE' })
+  user: User;
+
   @Column()
   title: string;
 
-  @Column('text')
+  @Column()
   message: string;
 
-  @Column()
-  type: string;
-
   @Column({ default: false })
-  is_read: boolean;
+  read: boolean;
 
   @CreateDateColumn()
-  created_at: Date;
-
-  @ManyToOne(() => User, user => user.notifications)
-  user: User;
+  createdAt: Date;
 }

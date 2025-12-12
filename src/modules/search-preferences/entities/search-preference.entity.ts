@@ -1,38 +1,46 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { User } from 'src/modules/users/entities/user.entity';
+import { typeOfProperty } from '../dto/enumTypeOfProperty';
 
 @Entity('search_preferences')
 export class SearchPreference {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
-  rooms: number;
+  @ManyToOne(() => User, user => user.searchPreferences, { onDelete: 'CASCADE' })
+  user: User;
 
-  @Column()
-  bathrooms: number;
-
-  @Column()
-  garage: boolean;
-
-  @Column()
-  patio: boolean;
-
-  @Column('decimal')
-  price_min: number;
-
-  @Column('decimal')
-  price_max: number;
-
-  @Column()
+  @Column({ nullable: true })
   zone: string;
 
-  @Column()
-  property_type: string;
+  @Column({ type: 'enum', enum: typeOfProperty, nullable: true })
+  typeOfProperty: typeOfProperty;
+
+  @Column({ nullable: true })
+  minPrice: number;
+
+  @Column({ nullable: true })
+  maxPrice: number;
+
+  @Column({ nullable: true })
+  m2: number;
+
+  @Column({ nullable: true })
+  minRooms: number;
+
+  @Column({ nullable: true })
+  minBathrooms: number;
+
+  @Column({ default: true })
+  notifyNewMatches: boolean;
+
+  @Column({ default: true })
+  notifyPriceDrops: boolean;
 
   @CreateDateColumn()
-  created_at: Date;
+  createdAt: Date;
 
-  @ManyToOne(() => User, user => user.searchPreferences, { nullable: true })
-  user: User;
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
+

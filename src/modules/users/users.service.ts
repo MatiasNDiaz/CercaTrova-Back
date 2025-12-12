@@ -12,51 +12,77 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async createUser(createUser: CreateUserDto): Promise<User> {
+  // Crear usuario
+  async createUser(createUserDto: CreateUserDto): Promise<User> {
     try {
-      const user:User = this.userRepository.create(createUser);
+      // Verificación: email único
+      const existing = await this.userRepository.findOne({
+        where: { email: createUserDto.email },
+      });
+
+      if (existing) {
+        throw new BadRequestException('El email ya está registrado');
+      }
+
+      const user: User = this.userRepository.create(createUserDto);
       return await this.userRepository.save(user);
+
     } catch (error) {
-      throw new Error('No se pudo crear el usuario: ' + error.message);
+      throw new BadRequestException(
+        'No se pudo crear el usuario: ' + error.message,
+      );
     }
   }
 
+  // Obtener todos
   async getAllUsers(): Promise<User[]> {
     try {
-      const users:User[] = await this.userRepository.find();
-      return users;
+      return await this.userRepository.find();
     } catch (error) {
-      // Manejo de error, por ejemplo:
-      throw new Error('No se pudo encontrar a los usuarios: ' + error.message);
+      throw new BadRequestException(
+        'No se pudo obtener la lista de usuarios: ' + error.message,
+      );
     }
   }
 
-  async getUserById(id:number): Promise<User | null> {
+  // Obtener por ID
+  async getUserById(id: number): Promise<User> {
     try {
-      const user:User | null = await this.userRepository.findOneBy({id});
+      const user = await this.userRepository.findOneBy({ id });
+      if (!user) throw new BadRequestException('Usuario no encontrado');
       return user;
     } catch (error) {
-      // Manejo de error, por ejemplo:
-      throw new Error('No se pudo encontrar a los usuarios: ' + error.message);
+      throw new BadRequestException('Error al buscar usuario: ' + error.message);
     }
   }
 
+  // Actualizar usuario
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
-    const user: User | null = await this.userRepository.findOneBy({ id });
-    if (!user) throw new BadRequestException ('Usuario no encontrado');
+    const user = await this.userRepository.findOneBy({ id });
+    if (!user) throw new BadRequestException('Usuario no encontrado');
 
-    Object.assign(user, updateUserDto); // actualiza los campos
+    Object.assign(user, updateUserDto);
     return await this.userRepository.save(user);
-  } 
+  }
 
+  // Eliminar usuario
   async deleteUser(id: number): Promise<void> {
     const result = await this.userRepository.delete(id);
-    if (result.affected === 0) throw new BadRequestException('Usuario no encontrado');
+    if (result.affected === 0)
+      throw new BadRequestException('Usuario no encontrado');
   }
 
-  // Funcion para verificar si existe un usuario por su email:
+  // Buscar usuario por email
   async findUserByEmail(email: string): Promise<User | null> {
-  return await this.userRepository.findOneBy({ email });
+    return await this.userRepository.findOneBy({ email });
+  }
+
+  // ✔ NUEVO: Verifica si un usuario puede recibir notificaciones
+  async canReceiveNotifications(userId: number): Promise<boolean> {
+    const user = await this.userRepository.findOneBy({ id: userId });
+    if (!user) throw new BadRequestException('Usuario no encontrado');
+
+    // Como TODO usuario debe registrarse con email, esto siempre será true
+    return !!user.email;
   }
 }
- 

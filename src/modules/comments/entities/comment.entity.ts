@@ -13,9 +13,17 @@ export class Comment {
   @CreateDateColumn()
   created_at: Date;
 
-  @ManyToOne(() => User, user => user.comments)
+  // 👇 columnas necesarias para filtrar fácilmente
+  @Column()
+  userId: number;
+
+  @Column()
+  propertyId: number;
+
+  // 👇 relaciones
+  @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Property, property => property.comments)
+  @ManyToOne(() => Property, property => property.comments, { onDelete: 'CASCADE' })
   property: Property;
 }

@@ -23,6 +23,8 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { PropertyFilterDto } from './dto/property-filter.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Express } from 'express';
+type MulterFile = Express.Multer.File;
 
 @Controller('properties')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -53,7 +55,7 @@ export class PropertiesController {
   @UseInterceptors(FilesInterceptor('images', 10))
   async create(
     @Body('data') rawData: string,
-    @UploadedFiles() images: Express.Multer.File[],
+    @UploadedFiles() images: MulterFile[],
   ) {
     let dto: CreatePropertyDto;
     try {
@@ -72,7 +74,7 @@ export class PropertiesController {
   async update(
     @Param('id') id: string,
     @Body('data') rawData: string,
-    @UploadedFiles() newImages: Express.Multer.File[],
+    @UploadedFiles() newImages: MulterFile[],
   ) {
     let dto: UpdatePropertyDto;
     try {

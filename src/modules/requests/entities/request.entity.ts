@@ -1,37 +1,57 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, CreateDateColumn, JoinColumn } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
-import { Property } from '../../properties/entities/property.entity';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
-@Entity('request_properties')
-export class Request {
+@Entity('user_search_feedback')
+export class UserSearchFeedback {
+
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ nullable: true })
+  rooms: number;
+
+  @Column({ nullable: true })
+  bathrooms: number;
+
+  @Column({ nullable: true })
+  zone: string;
+
+  @Column({ nullable: true })
+  city: string;
+
+  @Column({ nullable: true })
+  priceMin: number;
+
+  @Column({ nullable: true })
+  priceMax: number;
+
+  @Column({ nullable: true })
+  propertyType: string;
+
+  @Column({ nullable: true })
+  operationType: string;
+
+  @Column({ nullable: true })
+  antiquityMin: number;
+
+  @Column({ nullable: true })
+  antiquityMax: number;
+
+  @Column({ nullable: true })
+  hasGarage: boolean;
+
+  @Column({ nullable: true })
+  hasPatio: boolean;
+
+  @Column({ type: "text", nullable: true })
+  notes: string;
+
+  // Evita spam del usuario
   @Column()
-  property_type: string;
-
-  @Column()
-  address: string;
-
-  @Column('text')
-  description: string;
-
-  @Column('decimal')
-  price_suggested: number;
-
-  @Column('text', { nullable: true })
-  images: string;
-
-  @Column()
-  status: string;
+  deviceId: string;
 
   @CreateDateColumn()
-  created_at: Date;
+  createdAt: Date;
 
-  @ManyToOne(() => User, user => user.requests)
-  user: User;
-
-  @OneToOne(() => Property, { nullable: true })
-  @JoinColumn()
-  property: Property;
+  
 }
+

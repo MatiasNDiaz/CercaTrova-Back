@@ -12,52 +12,57 @@ import { Repository } from 'typeorm';
 import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 import { PropertyFilterDto } from './dto/property-filter.dto';
 import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
+import { Express } from 'express';
+type MulterFile = Express.Multer.File;
 import { PropertyImages } from '../ImagesProperty/entities/ImagesPropertyEntity';
 import { PropertyImagesService } from '../ImagesProperty/propertyImages.service'; // <- asegurate ruta correcta
+import { NotificationService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PropertiesService {
   constructor(
     @InjectRepository(Property)
     private readonly propertyRepo: Repository<Property>,
-
+    
     @InjectRepository(PropertyType)
     private readonly propertyTypeRepo: Repository<PropertyType>,
-
+    
     @InjectRepository(PropertyImages)
     private readonly propertyImageRepository: Repository<PropertyImages>,
-
+    
     private readonly cloudinaryService: CloudinaryService,
-
+    
+    private readonly notificationService: NotificationService,
+    
     private readonly propertyImagesService: PropertyImagesService, // inyectado
   ) {}
-
+  
   // ... findAll & findOne se mantienen sin cambios (igual que tenías)
   async findAll(): Promise<any[]> {
     try {
       const properties = await this.propertyRepo.find({
         relations: ['agent', 'ratings', 'typeOfProperty', 'images'],
       });
-
+      
       const result = await Promise.all(
         properties.map(async (p) => {
           const { avg } = await this.propertyRepo
-            .createQueryBuilder('property')
-            .leftJoin('property.ratings', 'rating')
-            .select('AVG(rating.score)', 'avg')
-            .where('property.id = :id', { id: p.id })
-            .getRawOne();
-
+          .createQueryBuilder('property')
+          .leftJoin('property.ratings', 'rating')
+          .select('AVG(rating.score)', 'avg')
+          .where('property.id = :id', { id: p.id })
+          .getRawOne();
+          
           return { ...p, ratingAverage: Number(avg) || 0 };
         }),
       );
-
+      
       return result;
     } catch (e) {
       throw new BadRequestException('No se pudieron obtener las propiedades');
     }
   }
-
+  
   async findOne(id: number): Promise<any> {
     const property = await this.propertyRepo.findOne({
       where: { id },
@@ -66,100 +71,140 @@ export class PropertiesService {
         'comments',
         'ratings',
         'favorites',
-        'requests',
         'referredBy',
         'typeOfProperty',
         'images',
       ],
     });
-
+    
     if (!property) {
       throw new NotFoundException(`No existe la propiedad con ID ${id}`);
     }
-
+    
     const { avg } = await this.propertyRepo
-      .createQueryBuilder('property')
-      .leftJoin('property.ratings', 'rating')
-      .select('AVG(rating.score)', 'avg')
-      .where('property.id = :id', { id })
-      .getRawOne();
-
+    .createQueryBuilder('property')
+    .leftJoin('property.ratings', 'rating')
+    .select('AVG(rating.score)', 'avg')
+    .where('property.id = :id', { id })
+    .getRawOne();
+    
     return { ...property, ratingAverage: Number(avg) || 0 };
   }
-
+  
   // -------------------------
   // Crear property + images
   // -------------------------
-  async createWithImages(dto: CreatePropertyDto, images: Express.Multer.File[]) {
-    const property = this.propertyRepo.create(dto);
-    await this.propertyRepo.save(property);
+  async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
+  // 1) Crear y salvar la propiedad básica
+  const property = this.propertyRepo.create(dto);
+      await this.propertyRepo.save(property);
 
-    if (!images || images.length === 0)
-      return { ...property, images: [] };
+      // 2) Si no hay imágenes, recargar y devolvemos inmediatamente
+      if (!images || images.length === 0) {
+        const minimal = await this.propertyRepo.findOne({
+          where: { id: property.id },
+          relations: ['typeOfProperty', 'images', 'agent']
+        });
+        return {
+          ...property,
+          images: minimal?.images ?? []
+        };
+      }
+    
+      // 3) Subir y guardar imágenes (delegado)
+      const savedImages = await this.propertyImagesService.createMany(property, images);
+      property.images = savedImages;
+    
+      // 4) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
+      const fullProperty = await this.propertyRepo.findOne({
+        where: { id: property.id },
+        relations: [
+          'typeOfProperty',
+          'images',
+          'agent',           // por si querés usar datos del agente en el template
+          'referredBy'
+        ],
+      });
+    
+      if (!fullProperty) {
+        // esto es raro, pero devolvemos algo lógico y loggeamos
+        throw new NotFoundException('Error interno: no se pudo recargar la propiedad');
+      }
+    
+      // 5) Disparar notificaciones en background (no bloquea la respuesta)
+      // NotificationService ya guarda notificaciones en BD antes de enviar emails (seguro).
+      this.notificationService.handleNewProperty(fullProperty).catch(err => {
+        // Loggear y seguir: no queremos que fallen los mails rompan la creación
+        console.error('Error enviando notificaciones para propiedad recién creada:', err);
+      });
+    
+      // 6) Devolver la representación del recurso creada (sin bloquear por emails)
+      return {
+        ...property,
+        images: savedImages.map(img => ({
+          id: img.id,
+          url: img.url,
+          hash: img.hash,
+          isCover: img.isCover,
+          publicId: img.publicId
+        }))
+      };
+    }
 
-    // delegamos la subida / guardado de imágenes
-    const savedImages = await this.propertyImagesService.createMany(property, images);
-
-    // devolver property con imágenes creadas
-    // devolver property con imágenes creadas
-return {
-  ...property,
-  images: savedImages.map(img => ({
-    id: img.id,
-    url: img.url,
-    hash: img.hash,
-    isCover: img.isCover,
-    publicId: img.publicId
-  }))
-};
-
-  }
 
   // -------------------------
   // UPDATE property (delegando imagenes)
   // -------------------------
   async update(
-    id: number,
-    dto: UpdatePropertyDto,
-    newImages?: Express.Multer.File[],
-    deleteImagesIds?: number[],
-  ): Promise<Property> {
-    const property = await this.propertyRepo.findOne({
-      where: { id },
-      relations: ['images'],
-    });
+  id: number,
+  dto: UpdatePropertyDto,
+  newImages?: MulterFile[],
+  deleteImagesIds?: number[],
+): Promise<Property> {
+  const property = await this.propertyRepo.findOne({
+    where: { id },
+    relations: ['images', 'typeOfProperty', 'agent']
+  });
 
-    if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
+  if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
 
-    // actualizar campos de propiedad
-    Object.assign(property, dto);
+  // Capturar precio antiguo ANTES de cambiar
+  const oldPrice = property.price;
 
-    // eliminar imágenes (delegado)
-    if (deleteImagesIds && deleteImagesIds.length > 0) {
-      await this.propertyImagesService.deleteManyByIds(deleteImagesIds);
-    }
+  // Actualizar campos (no persistir todavía)
+  Object.assign(property, dto);
 
-    // crear nuevas imágenes (delegado)
-    if (newImages && newImages.length > 0) {
-      const added = await this.propertyImagesService.createMany(property, newImages);
-      // actualizar propiedad en memoria
-      property.images = [...(property.images || []), ...added];
-    }
-
-    // cambiar portada (si vino en dto)
-    if (dto.setCoverImageId) {
-      await this.propertyImagesService.setAsCover(dto.setCoverImageId);
-    }
-
-    // asegurar portada (por si quedó sin portada)
-    await this.propertyImagesService.ensureCoverExists(id);
-
-    // salvar cambios de property (campos)
-    await this.propertyRepo.save(property);
-
-    // devolver la propiedad con imágenes actualizadas
-    return this.findOne(id);
+  // Manejo de imágenes (eliminación y adición)
+  if (deleteImagesIds && deleteImagesIds.length > 0) {
+    await this.propertyImagesService.deleteManyByIds(deleteImagesIds);
+    // actualizar referencia en memoria si querés
+    property.images = property.images?.filter(i => !deleteImagesIds.includes(i.id));
   }
+
+  if (newImages && newImages.length > 0) {
+    const added = await this.propertyImagesService.createMany(property, newImages);
+    property.images = [...(property.images || []), ...added];
+  }
+
+  if (dto.setCoverImageId) {
+    await this.propertyImagesService.setAsCover(dto.setCoverImageId);
+  }
+
+  await this.propertyImagesService.ensureCoverExists(id);
+
+  // Guardar cambios
+  await this.propertyRepo.save(property);
+
+  // Notificar si cambió el precio: hacemos el handle después del save y en background
+  if (dto.price && dto.price !== oldPrice) {
+    this.notificationService.handlePriceChange(property, oldPrice).catch(err => {
+      console.error('Error notificando baja de precio:', err);
+    });
+  }
+
+  return this.findOne(id); 
+}
+
 
   // -------------------------
   // DELETE property -> delegar eliminación de imágenes también

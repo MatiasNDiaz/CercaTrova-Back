@@ -1,11 +1,13 @@
 import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColumn, UpdateDateColumn, CreateDateColumn } from "typeorm"
 import { User } from "src/modules/users/entities/user.entity";
-import { Request } from '../../requests/entities/request.entity';
+import { UserSearchFeedback } from '../../requests/entities/request.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
 import { Rating } from 'src/modules/ratings/entities/rating.entity';
 import { Comment } from 'src/modules/comments/entities/comment.entity';
 import { PropertyType } from "src/modules/typeOfProperty/entities/typeOfProperty.entity";
 import { PropertyImages } from "src/modules/ImagesProperty/entities/ImagesPropertyEntity";
+import { IsEnum } from "class-validator";
+import { StatusProperty } from "../dto/enumsStatusProperty";
 
 @Entity('property')
 export class Property {
@@ -33,6 +35,9 @@ export class Property {
     @Column()
     patio: boolean;
 
+    @Column({ type: 'int', nullable: true })
+    m2: number;
+
     @Column()
     antiquity: number;
 
@@ -40,7 +45,8 @@ export class Property {
     price: number;
 
     @Column()
-    status: string;
+    @IsEnum(StatusProperty)
+    status: StatusProperty;
 
     @CreateDateColumn()
     created_at: Date;
@@ -66,8 +72,9 @@ export class Property {
 
     @OneToMany(() => Favorite, favorite => favorite.property)
     favorites: Favorite[];
-    @OneToMany(() => Request, request => request.property)
-    requests: Request[];
+    
+    // @OneToMany(() => Request, request => request.property)
+    // requests: Request[];
 
     @ManyToOne(() => User, { nullable: true }) // nullable porque puede no tener recomendador
     
