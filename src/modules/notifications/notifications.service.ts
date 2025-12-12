@@ -29,7 +29,6 @@ export class NotificationService {
     const n = this.repo.create({ user, title, message });
     await this.repo.save(n);
 
-    // enviar email individual
     await this.emailService.sendEmail(
       user.email,
       title,
@@ -44,7 +43,6 @@ export class NotificationService {
     const users = await this.usersService.getAllUsers();
     const imageUrls = property.images?.map(i => i.url) ?? [];
 
-    // 1) crear notificaciones en DB
     const notifications = users
       .filter(u => u.email)
       .map(user =>
@@ -57,7 +55,6 @@ export class NotificationService {
 
     await this.repo.save(notifications);
 
-    // 2) email global masivo (en un solo envío)
     await this.emailService.sendMultipleEmails(
       users.map(u => u.email),
       'Nueva propiedad publicada',
@@ -71,56 +68,78 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // Nueva propiedad → preferencias
+  // Nueva propiedad → preferencias con score y características
   // -----------------------------------------------------
   async handleNewProperty(property: Property) {
     const prefs = await this.searchPrefService.findAllWithUsers();
     const imageUrls = property.images?.map(i => i.url) ?? [];
 
-    const matchedUsers: string[] = [];
+    const notificationsToSave: Notification[] = [];
+    const matchedUsersEmails: { email: string; name: string; characteristics: string[] }[] = [];
 
     for (const pref of prefs) {
       if (!pref.notifyNewMatches) continue;
 
-      const match =
-        (!pref.zone ||
-          property.zone?.toLowerCase().includes(pref.zone.toLowerCase())) &&
-        (!pref.typeOfProperty ||
-          property.typeOfProperty?.name === pref.typeOfProperty) &&
-        (!pref.minPrice || property.price >= pref.minPrice) &&
-        (!pref.maxPrice || property.price <= pref.maxPrice) &&
-        (!pref.minRooms || property.rooms >= pref.minRooms) &&
-        (!pref.minBathrooms || property.bathrooms >= pref.minBathrooms) &&
-        (!pref.m2 || property.m2 >= pref.m2);
+      const matchedCharacteristics: string[] = [];
 
-      if (match && pref.user.email) {
-        matchedUsers.push(pref.user.email);
+      if (pref.zone && property.zone?.toLowerCase().includes(pref.zone.toLowerCase()))
+        matchedCharacteristics.push(`Zona: ${pref.zone}`);
+
+      if (pref.typeOfProperty && property.typeOfProperty?.name === pref.typeOfProperty)
+        matchedCharacteristics.push(`Tipo: ${pref.typeOfProperty}`);
+
+      if (pref.minPrice && property.price >= pref.minPrice)
+        matchedCharacteristics.push(`Precio mínimo: ${pref.minPrice}`);
+
+      if (pref.maxPrice && property.price <= pref.maxPrice)
+        matchedCharacteristics.push(`Precio máximo: ${pref.maxPrice}`);
+
+      if (pref.minRooms && property.rooms >= pref.minRooms)
+        matchedCharacteristics.push(`Habitaciones mínimas: ${pref.minRooms}`);
+
+      if (pref.minBathrooms && property.bathrooms >= pref.minBathrooms)
+        matchedCharacteristics.push(`Baños mínimos: ${pref.minBathrooms}`);
+
+      if (pref.m2 && property.m2 >= pref.m2)
+        matchedCharacteristics.push(`Metros cuadrados: ${pref.m2}`);
+
+      if (matchedCharacteristics.length > 0 && pref.user.email) {
+        matchedUsersEmails.push({
+          email: pref.user.email,
+          name: pref.user.name || 'Usuario',
+          characteristics: matchedCharacteristics
+        });
 
         const note = this.repo.create({
           user: pref.user,
           title: 'Nueva propiedad que coincide con tus preferencias',
-          message: `Hay una propiedad en ${property.zone} que te puede interesar.`
+          message: `Tu propiedad coincide con ${matchedCharacteristics.length} características: ${matchedCharacteristics.join(', ')}.`
         });
 
-        await this.repo.save(note);
+        notificationsToSave.push(note);
       }
     }
 
-    // envío masivo a los que hacen match
-    if (matchedUsers.length > 0) {
-      await this.emailService.sendMultipleEmails(
-        matchedUsers,
-        'Nueva propiedad según tus preferencias',
-        EmailTemplates.newProperty(
-          property.title,
-          property.zone,
-          property.price,
-          imageUrls
-        )
-      );
+    if (notificationsToSave.length > 0) {
+      await this.repo.save(notificationsToSave);
+
+      for (const u of matchedUsersEmails) {
+        await this.emailService.sendEmail(
+          u.email,
+          'Nueva propiedad según tus preferencias',
+          EmailTemplates.matchSearch(
+            u.name,
+            property.title,
+            property.zone,
+            property.price,
+            imageUrls,
+            u.characteristics
+          )
+        );
+      }
     }
 
-    // envío global (solo UNA VEZ, sin duplicar)
+    // No tocamos el envío global
     await this.broadcastNewProperty(property);
   }
 
@@ -135,47 +154,42 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-// Notificación por CAMBIO DE PRECIO
-// -----------------------------------------------------
-async handlePriceChange(property: Property, oldPrice: number) {
-  try {
-    const newPrice = property.price;
+  // Notificación por CAMBIO DE PRECIO
+  // -----------------------------------------------------
+  async handlePriceChange(property: Property, oldPrice: number) {
+    try {
+      const newPrice = property.price;
+      if (newPrice >= oldPrice) return;
 
-    // Solo notificamos si el precio BAJÓ
-    if (newPrice >= oldPrice) return;
+      const users = await this.usersService.getAllUsers();
+      const imageUrls = property.images?.map(i => i.url) ?? [];
 
-    const users = await this.usersService.getAllUsers();
-    const imageUrls = property.images?.map(i => i.url) ?? [];
+      const notifications = users
+        .filter(u => u.email)
+        .map(user =>
+          this.repo.create({
+            user,
+            title: 'Actualización de precio',
+            message: `La propiedad "${property.title}" bajó su precio de ${oldPrice} a ${newPrice}.`
+          })
+        );
 
-    // Crear notificaciones individuales en la DB
-    const notifications = users
-      .filter(u => u.email)
-      .map(user =>
-        this.repo.create({
-          user,
-          title: 'Actualización de precio',
-          message: `La propiedad "${property.title}" bajó su precio de ${oldPrice} a ${newPrice}.`
-        })
+      await this.repo.save(notifications);
+
+      await this.emailService.sendMultipleEmails(
+        users.map(u => u.email),
+        'Actualización de precio',
+        EmailTemplates.priceDrop(
+          property.title,
+          property.zone,
+          oldPrice,
+          newPrice,
+          imageUrls
+        )
       );
 
-    await this.repo.save(notifications);
-
-    // Enviar emails MASIVOS
-    await this.emailService.sendMultipleEmails(
-      users.map(u => u.email),
-      'Actualización de precio',
-      EmailTemplates.priceDrop(
-        property.title,
-        property.zone,
-        oldPrice,
-        newPrice,
-        imageUrls
-      )
-    );
-
-  } catch (err) {
-    console.error('Error en handlePriceChange:', err);
+    } catch (err) {
+      console.error('Error en handlePriceChange:', err);
+    }
   }
-}
-
 }

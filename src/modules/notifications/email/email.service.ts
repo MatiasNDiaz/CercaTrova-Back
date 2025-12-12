@@ -37,6 +37,5 @@ export class EmailService {
   }));
 
   await sgMail.send(msgs);
-}
-
+  }
 }
