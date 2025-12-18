@@ -1,23 +1,28 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SearchPreference } from './entities/search-preference.entity';
 import { CreateSearchPreferenceDto } from './dto/create-search-preference.dto';
 import { UpdateSearchPreferenceDto } from './dto/update-search-preference.dto';
 import { UsersService } from '../users/users.service';
+import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 
 @Injectable()
 export class SearchPreferencesService {
   constructor(
     @InjectRepository(SearchPreference)
     private repo: Repository<SearchPreference>,
+
+    @InjectRepository(PropertyType)
+    private propertyTypeRepo: Repository<PropertyType>,
+
     private usersService: UsersService
   ) {}
 
   async getByUser(userId: number) {
     return this.repo.findOne({
       where: { user: { id: userId } },
-      relations: ['user'],
+      relations: ['user', 'typeOfProperty'],
     });
   }
 
@@ -26,7 +31,25 @@ export class SearchPreferencesService {
     if (!user) throw new Error('Usuario no encontrado');
 
     const pref = this.repo.create({ ...dto, user });
-    return this.repo.save(pref);
+
+    // 🔹 Asignar la entidad PropertyType si envían typeOfPropertyId
+    if (dto.typeOfPropertyId) {
+      const type = await this.propertyTypeRepo.findOne({
+        where: { id: dto.typeOfPropertyId }
+      });
+      if (!type) throw new NotFoundException(
+        `No existe el tipo de propiedad con ID ${dto.typeOfPropertyId}`
+      );
+      pref.typeOfProperty = type;
+    }
+
+    const savedPref = await this.repo.save(pref);
+
+    // 🔹 Recargar con la relación para que aparezca en JSON y email
+    return this.repo.findOne({
+      where: { id: savedPref.id },
+      relations: ['typeOfProperty', 'user']
+    });
   }
 
   async update(userId: number, dto: UpdateSearchPreferenceDto) {
@@ -35,10 +58,27 @@ export class SearchPreferencesService {
     if (!pref) return this.create(userId, dto);
 
     Object.assign(pref, dto);
-    return this.repo.save(pref);
+
+    // 🔹 Actualizar typeOfProperty si envían typeOfPropertyId
+    if (dto.typeOfPropertyId) {
+      const type = await this.propertyTypeRepo.findOne({
+        where: { id: dto.typeOfPropertyId }
+      });
+      if (!type) throw new NotFoundException(
+        `No existe el tipo de propiedad con ID ${dto.typeOfPropertyId}`
+      );
+      pref.typeOfProperty = type;
+    }
+
+    const savedPref = await this.repo.save(pref);
+
+    return this.repo.findOne({
+      where: { id: savedPref.id },
+      relations: ['typeOfProperty', 'user']
+    });
   }
 
   async findAllWithUsers() {
-    return this.repo.find({ relations: ['user'] });
+    return this.repo.find({ relations: ['user', 'typeOfProperty'] });
   }
 }

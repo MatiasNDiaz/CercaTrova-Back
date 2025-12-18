@@ -94,62 +94,70 @@ export class PropertiesService {
   // -------------------------
   // Crear property + images
   // -------------------------
-  async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
+async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
+  // 0) Mapear typeOfProperty si viene en el DTO
+  if (dto.typeOfPropertyId) {
+    const type = await this.propertyTypeRepo.findOne({ where: { id: dto.typeOfPropertyId } });
+    if (!type) {
+      throw new NotFoundException(`No existe el tipo de propiedad con ID ${dto.typeOfPropertyId}`);
+    }
+    // Asignar objeto completo al DTO para que TypeORM cree la relación
+    (dto as any).typeOfProperty = type;
+  }
+
   // 1) Crear y salvar la propiedad básica
   const property = this.propertyRepo.create(dto);
-      await this.propertyRepo.save(property);
+  await this.propertyRepo.save(property);
 
-      // 2) Si no hay imágenes, recargar y devolvemos inmediatamente
-      if (!images || images.length === 0) {
-        const minimal = await this.propertyRepo.findOne({
-          where: { id: property.id },
-          relations: ['typeOfProperty', 'images', 'agent']
-        });
-        return {
-          ...property,
-          images: minimal?.images ?? []
-        };
-      }
-    
-      // 3) Subir y guardar imágenes (delegado)
-      const savedImages = await this.propertyImagesService.createMany(property, images);
-      property.images = savedImages;
-    
-      // 4) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
-      const fullProperty = await this.propertyRepo.findOne({
-        where: { id: property.id },
-        relations: [
-          'typeOfProperty',
-          'images',
-          'agent',           // por si querés usar datos del agente en el template
-          'referredBy'
-        ],
-      });
-    
-      if (!fullProperty) {
-        // esto es raro, pero devolvemos algo lógico y loggeamos
-        throw new NotFoundException('Error interno: no se pudo recargar la propiedad');
-      }
-    
-      // 5) Disparar notificaciones en background (no bloquea la respuesta)
-      // NotificationService ya guarda notificaciones en BD antes de enviar emails (seguro).
-      this.notificationService.handleNewProperty(fullProperty).catch(err => {
-        // Loggear y seguir: no queremos que fallen los mails rompan la creación
-        console.error('Error enviando notificaciones para propiedad recién creada:', err);
-      });
-    
-      // 6) Devolver la representación del recurso creada (sin bloquear por emails)
-      return {
-        ...property,
-        images: savedImages.map(img => ({
-          id: img.id,
-          url: img.url,
-          hash: img.hash,
-          isCover: img.isCover,
-          publicId: img.publicId
-        }))
-      };
-    }
+  // 2) Si no hay imágenes, recargar y devolvemos inmediatamente
+  if (!images || images.length === 0) {
+    const minimal = await this.propertyRepo.findOne({
+      where: { id: property.id },
+      relations: ['typeOfProperty', 'images', 'agent']
+    });
+    return {
+      ...property,
+      images: minimal?.images ?? []
+    };
+  }
+
+  // 3) Subir y guardar imágenes (delegado)
+  const savedImages = await this.propertyImagesService.createMany(property, images);
+  property.images = savedImages;
+
+  // 4) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
+  const fullProperty = await this.propertyRepo.findOne({
+    where: { id: property.id },
+    relations: [
+      'typeOfProperty',
+      'images',
+      'agent',           
+      'referredBy'
+    ],
+  });
+
+  if (!fullProperty) {
+    throw new NotFoundException('Error interno: no se pudo recargar la propiedad');
+  }
+
+  // 5) Disparar notificaciones en background
+  this.notificationService.handleNewProperty(fullProperty).catch(err => {
+    console.error('Error enviando notificaciones para propiedad recién creada:', err);
+  });
+
+  // 6) Devolver la representación del recurso creada
+  return {
+    ...property,
+    images: savedImages.map(img => ({
+      id: img.id,
+      url: img.url,
+      hash: img.hash,
+      isCover: img.isCover,
+      publicId: img.publicId
+    }))
+  };
+}
+
 
 
   // -------------------------

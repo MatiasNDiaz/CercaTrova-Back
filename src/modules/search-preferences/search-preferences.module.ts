@@ -4,10 +4,11 @@ import { SearchPreferencesService } from './search-preferences.service';
 import { SearchPreferencesController } from './search-preferences.controller';
 import { SearchPreference } from './entities/search-preference.entity';
 import { UsersModule } from '../users/users.module';
+import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SearchPreference]),
+    TypeOrmModule.forFeature([SearchPreference, PropertyType]),
     UsersModule,
   ],
   controllers: [SearchPreferencesController],

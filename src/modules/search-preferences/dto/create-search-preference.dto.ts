@@ -1,25 +1,37 @@
-import { IsOptional, IsString, IsNumber, IsBoolean, IsEnum, Min } from 'class-validator';
-import { typeOfProperty } from './enumTypeOfProperty';
+import { Type } from 'class-transformer';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsBoolean,
+  IsEnum,
+  Min,
+  Max
+} from 'class-validator';
 
 export class CreateSearchPreferenceDto {
   @IsOptional()
   @IsString()
   zone?: string;
 
+    // Enviar el ID del tipo de propiedad
+ 
   @IsOptional()
-  @IsEnum(typeOfProperty)
-  typeOfProperty?: typeOfProperty;
+  @Type(() => Number)
+  @IsNumber()
+  typeOfPropertyId?: number;  // <- usar ID, no enum
 
+  // ---------------------------
+  // PRECIO (NUEVO MODELO)
+  // ---------------------------
   @IsOptional()
   @IsNumber()
   @Min(0)
-  minPrice?: number;
+  preferredPrice?: number;
 
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  maxPrice?: number;
-
+  // ---------------------------
+  // RESTO
+  // ---------------------------
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -28,13 +40,24 @@ export class CreateSearchPreferenceDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  m2?: number;
+  minBathrooms?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
-  minBathrooms?: number;
+  m2?: number;
 
+  // ---------------------------
+  // ANTIGÜEDAD (NUEVO)
+  // ---------------------------
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxAntiquity?: number;
+
+  // ---------------------------
+  // FLAGS
+  // ---------------------------
   @IsOptional()
   @IsBoolean()
   notifyNewMatches?: boolean;
