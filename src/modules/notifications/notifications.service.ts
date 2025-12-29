@@ -8,14 +8,6 @@ import { Property } from '../properties/entities/property.entity';
 import { EmailService } from './email/email.service';
 import { EmailTemplates } from './email/email-template';
 
-type MatchEmailPayload = {
-  email: string;
-  name: string;
-  characteristics: string[];
-  matchedCount: number;
-  totalCount: number;
-};
-
 @Injectable()
 export class NotificationService {
   constructor(
@@ -23,42 +15,62 @@ export class NotificationService {
     private readonly repo: Repository<Notification>,
     private readonly usersService: UsersService,
     private readonly searchPrefService: SearchPreferencesService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
   ) {}
 
   // -----------------------------------------------------
-  // MATCH DE PRECIO (DINÁMICO)
+  // MATCHES CON MÁRGENES (LÓGICA MEJORADA)
   // -----------------------------------------------------
+
   private priceMatches(propertyPrice: number, preferredPrice?: number): boolean {
     if (!preferredPrice || !propertyPrice) return false;
-
     let tolerancePercent = 6;
-    if (preferredPrice >= 50_000 && preferredPrice < 150_000) tolerancePercent = 7;
-    if (preferredPrice >= 150_000) tolerancePercent = 5;
+    if (preferredPrice >= 50000 && preferredPrice < 150000) tolerancePercent = 7;
+    if (preferredPrice >= 150000) tolerancePercent = 5;
 
     const min = preferredPrice * (1 - tolerancePercent / 100);
     const max = preferredPrice * (1 + tolerancePercent / 100);
-
     return propertyPrice >= min && propertyPrice <= max;
   }
 
+  // Tolerancia m2: 15% menos o hasta 30% más
+  private m2Matches(propM2: number, prefM2: number): boolean {
+    if (!prefM2 || !propM2) return false;
+    const min = prefM2 * 0.85; 
+    const max = prefM2 * 1.30; 
+    return propM2 >= min && propM2 <= max;
+  }
+
+  // Tolerancia Antigüedad: Hasta 2 años adicionales al límite
+  private antiquityMatches(propAnt: number, prefMaxAnt: number): boolean {
+    if (prefMaxAnt === null || prefMaxAnt === undefined) return true;
+    return Number(propAnt) <= (Number(prefMaxAnt) + 2);
+  }
+
   // -----------------------------------------------------
-  // NUEVA PROPIEDAD → MATCH CON PREFERENCIAS
+  // NUEVA PROPIEDAD → LÓGICA DE MATCH + EVITAR SPAM
   // -----------------------------------------------------
   async handleNewProperty(property: Property) {
     const prefs = await this.searchPrefService.findAllWithUsers();
-    const imageUrls = property.images?.map(i => i.url) ?? [];
-
-    const notifications: Notification[] = [];
-    const emailsToSend: MatchEmailPayload[] = [];
+    const imageUrls = property.images?.map((i) => i.url) ?? [];
+    
+    const notifiedUserIds = new Set<number>();
 
     for (const pref of prefs) {
       if (!pref.notifyNewMatches || !pref.user?.email) continue;
 
       const matched: string[] = [];
+      
+      const prefTypeId = pref.typeOfProperty?.id ? Number(pref.typeOfProperty.id) : null;
+      const propTypeId = property.typeOfProperty?.id ? Number(property.typeOfProperty.id) : null;
 
-      // -------- TOTAL DE CRITERIOS (BIEN CONTADO) --------
-      const totalCriteria = [
+      // 1. FILTRO ESTRICTO DE TIPO
+      if (prefTypeId && prefTypeId !== propTypeId) {
+        continue;
+      }
+
+      // 2. CONTEO DINÁMICO DE CRITERIOS
+      const criteriaToCheck = [
         pref.zone,
         pref.typeOfProperty,
         pref.preferredPrice,
@@ -66,30 +78,25 @@ export class NotificationService {
         pref.minBathrooms,
         pref.m2,
         pref.maxAntiquity,
-        pref.property_deed === true ? true : null
-      ].filter(v => v !== null && v !== undefined).length;
+        pref.property_deed,
+      ];
+      
+      const totalCriteria = criteriaToCheck.filter(
+        (v) => v !== null && v !== undefined && v !== false
+      ).length;
 
       // ---------------- ZONA ----------------
-      if (
-        pref.zone &&
-        property.zone?.toLowerCase().includes(pref.zone.toLowerCase())
-      ) {
+      if (pref.zone && property.zone?.toLowerCase().includes(pref.zone.toLowerCase())) {
         matched.push(`Zona: ${pref.zone}`);
       }
 
       // ---------------- TIPO ----------------
-      if (
-        pref.typeOfProperty &&
-        property.typeOfProperty?.id === pref.typeOfProperty.id
-      ) {
+      if (prefTypeId && prefTypeId === propTypeId) {
         matched.push(`Tipo de propiedad: ${property.typeOfProperty.name}`);
       }
 
       // ---------------- PRECIO ----------------
-      if (
-        pref.preferredPrice &&
-        this.priceMatches(property.price, pref.preferredPrice)
-      ) {
+      if (pref.preferredPrice && this.priceMatches(property.price, pref.preferredPrice)) {
         matched.push(`Precio cercano a $${pref.preferredPrice}`);
       }
 
@@ -103,112 +110,85 @@ export class NotificationService {
         matched.push(`Baños: ${pref.minBathrooms}`);
       }
 
-      // ---------------- M2 ----------------
-      if (pref.m2 && (property.m2 ?? 0) >= pref.m2) {
-        matched.push(`Superficie: ${pref.m2} m²`);
+      // ---------------- M2 (Con Margen) ----------------
+      if (pref.m2 && this.m2Matches(property.m2, pref.m2)) {
+        matched.push(`Superficie: ${property.m2} m² (Cerca de tu búsqueda)`);
       }
 
-      // ---------------- ESCRITURAS (LÓGICA REAL) ----------------
+      // ---------------- ESCRITURAS ----------------
       if (pref.property_deed === true && property.property_deed === true) {
         matched.push('Tiene escrituras');
       }
 
-      // ---------------- ANTIGÜEDAD ----------------
-      if (
-        pref.maxAntiquity !== undefined &&
-        pref.maxAntiquity !== null &&
-        Number(property.antiquity) <= Number(pref.maxAntiquity)
-      ) {
-        matched.push(`Antigüedad: hasta ${pref.maxAntiquity} años`);
+      // ---------------- ANTIGÜEDAD (Con Margen) ----------------
+      if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null) {
+        if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity))) {
+          matched.push(`Antigüedad: acorde a tu preferencia`);
+        }
       }
 
-      // ---------------- RESULTADO ----------------
+      // ---------------- ENVÍO DE MATCH ----------------
       if (matched.length > 0) {
-        notifications.push(
+        notifiedUserIds.add(pref.user.id);
+
+        await this.repo.save(
           this.repo.create({
             user: pref.user,
-            title: 'Nueva propiedad según tus preferencias',
-            message: `Esta propiedad cumple ${matched.length} de ${totalCriteria} características.`
-          })
+            title: '¡Coincidencia encontrada!',
+            message: `Esta propiedad cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
+          }),
         );
 
-        emailsToSend.push({
-          email: pref.user.email,
-          name: pref.user.name || 'Usuario',
-          characteristics: matched,
-          matchedCount: matched.length,
-          totalCount: totalCriteria
-        });
-      }
-    }
-
-    console.log({
-  prefTypeId: prefs[0]?.typeOfProperty?.id,
-  propertyTypeId: property.typeOfProperty?.id,
-});
-
-
-    // ---------------- GUARDAR + ENVIAR ----------------
-    if (notifications.length > 0) {
-      await this.repo.save(notifications);
-
-      for (const mail of emailsToSend) {
         try {
           await this.emailService.sendEmail(
-            mail.email,
+            pref.user.email,
             'Nueva propiedad según tus preferencias',
             EmailTemplates.matchSearch(
-              mail.name,
+              pref.user.name || 'Usuario',
               property.title,
               property.zone,
               property.price,
               imageUrls,
-              mail.characteristics,
-              mail.matchedCount,
-              mail.totalCount
-            )
+              matched,
+              matched.length,
+              totalCriteria,
+            ),
           );
         } catch (err) {
-          console.error(`Error enviando mail a ${mail.email}`, err);
+          console.error(`Error enviando match mail a ${pref.user.email}`, err);
         }
       }
     }
 
-    // 👉 NOTIFICACIÓN GLOBAL
-    this.broadcastNewProperty(property).catch(err =>
-      console.error('Error notificando nueva propiedad global:', err)
+    await this.broadcastNewProperty(property, notifiedUserIds).catch((err) =>
+      console.error('Error en broadcast global:', err),
     );
   }
 
   // -----------------------------------------------------
-  // NOTIFICACIÓN GLOBAL
+  // NOTIFICACIÓN GLOBAL (CON FILTRO DE EXCLUSIÓN)
   // -----------------------------------------------------
-  async broadcastNewProperty(property: Property) {
-    const users = await this.usersService.getAllUsers();
-    const imageUrls = property.images?.map(i => i.url) ?? [];
+  async broadcastNewProperty(property: Property, excludedIds: Set<number> = new Set()) {
+    const allUsers = await this.usersService.getAllUsers();
+    const imageUrls = property.images?.map((i) => i.url) ?? [];
 
-    const notifications = users
-      .filter(u => u.email)
-      .map(user =>
-        this.repo.create({
-          user,
-          title: 'Nueva propiedad publicada',
-          message: `Se ha publicado la propiedad: ${property.title}`
-        })
-      );
+    const usersToNotify = allUsers.filter((u) => u.email && !excludedIds.has(u.id));
+    if (usersToNotify.length === 0) return;
 
+    const notifications = usersToNotify.map((user) =>
+      this.repo.create({
+        user,
+        title: 'Nueva propiedad publicada',
+        message: `Se ha publicado la propiedad: ${property.title}`,
+      }),
+    );
     await this.repo.save(notifications);
 
     try {
       await this.emailService.sendMultipleEmails(
-        users.filter(u => u.email).map(u => u.email),
+        usersToNotify.map((u) => u.email),
         'Nueva propiedad publicada',
-        EmailTemplates.newProperty(
-          property.title,
-          property.zone,
-          property.price,
-          imageUrls
-        )
+        EmailTemplates.newProperty(property.title, property.zone, property.price, imageUrls),
       );
     } catch (err) {
       console.error('Error enviando mails globales:', err);
@@ -222,44 +202,41 @@ export class NotificationService {
     if ((property.price ?? 0) >= oldPrice) return;
 
     const users = await this.usersService.getAllUsers();
-    const imageUrls = property.images?.map(i => i.url) ?? [];
+    const imageUrls = property.images?.map((i) => i.url) ?? [];
 
     const notifications = users
-      .filter(u => u.email)
-      .map(user =>
+      .filter((u) => u.email)
+      .map((user) =>
         this.repo.create({
           user,
           title: 'Actualización de precio',
-          message: `La propiedad "${property.title}" bajó su precio de ${oldPrice} a ${property.price}.`
-        })
+          message: `La propiedad "${property.title}" bajó su precio de $${oldPrice} a $${property.price}.`,
+        }),
       );
 
     await this.repo.save(notifications);
 
     try {
       await this.emailService.sendMultipleEmails(
-        users.filter(u => u.email).map(u => u.email),
+        users.filter((u) => u.email).map((u) => u.email),
         'Actualización de precio',
         EmailTemplates.priceDrop(
           property.title,
           property.zone,
           oldPrice,
           property.price,
-          imageUrls
-        )
+          imageUrls,
+        ),
       );
     } catch (err) {
       console.error('Error enviando mails de baja de precio:', err);
     }
   }
 
-  // -----------------------------------------------------
-  // OBTENER NOTIFICACIONES POR USUARIO
-  // -----------------------------------------------------
   async getForUser(userId: number) {
     return this.repo.find({
       where: { user: { id: userId } },
-      order: { createdAt: 'DESC' }
+      order: { createdAt: 'DESC' },
     });
   }
 }
