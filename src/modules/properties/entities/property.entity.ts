@@ -29,6 +29,9 @@ export class Property {
     @Column()
     bathrooms: number;
 
+    @Column({ default: false })
+    property_deed: boolean;
+
     @Column()
     garage: boolean;
 

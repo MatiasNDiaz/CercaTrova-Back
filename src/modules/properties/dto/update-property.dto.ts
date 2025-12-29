@@ -16,6 +16,10 @@ export class UpdatePropertyDto {
   @IsNotEmpty({ message: 'La zona es obligatoria' })
   zone: string;
 
+  @IsOptional()
+  @IsBoolean()
+  property_deed?: boolean;
+
   @IsInt()
   typeOfPropertyId: number;
 

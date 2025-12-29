@@ -14,8 +14,10 @@ export class CreateSearchPreferenceDto {
   @IsString()
   zone?: string;
 
-    // Enviar el ID del tipo de propiedad
- 
+  @IsOptional()
+  @IsBoolean()
+  property_deed?: boolean;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

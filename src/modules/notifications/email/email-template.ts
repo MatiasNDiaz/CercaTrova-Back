@@ -19,18 +19,28 @@ export const EmailTemplates = {
         box-shadow:0 4px 12px rgba(0,0,0,0.08);
       ">
 
-        <div style="text-align:center; margin:1px 0 1px 0;">
-          <img
-            src="${LOGO_URL}"
-            alt="CercaTrova Inmobiliaria"
-            style="
-            max-width:220px;
-            width:100%;
-            height:200px;
-            display:block;
-            margin:0 auto;"
-          />
-        </div>
+     <div style="
+  text-align:center;
+  margin:1px 0;
+  width:240px;
+  height:200px;
+  overflow:hidden;
+  margin-left:auto;
+  margin-right:auto;
+">
+  <img
+    src="${LOGO_URL}"
+    alt="CercaTrova Inmobiliaria"
+    style="
+      width:106%;
+      height:auto;
+      display:block;
+      margin:0 auto;
+      transform:translateX(-1%);
+    "
+  />
+</div>
+
 
         ${content}
 
@@ -120,7 +130,7 @@ export const EmailTemplates = {
     totalCount: number
   ) =>
     EmailTemplates.wrapper(`
-      <h2 style="color:${BRAND_GREEN};">
+      <h2 style="color:${BRAND_GREEN}; font-size:18px; font-weight:bold;">
         ¡Tenemos una propiedad que puede interesarte, ${userName}!
       </h2>
 

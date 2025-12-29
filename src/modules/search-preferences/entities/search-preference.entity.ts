@@ -24,9 +24,12 @@ export class SearchPreference {
   @Column({ nullable: true })
   zone: string;
 
-@ManyToOne(() => PropertyType, { nullable: true, eager: true })
-@JoinColumn({ name: 'typeOfPropertyId' })
-typeOfProperty: PropertyType;
+  @ManyToOne(() => PropertyType, { nullable: true, eager: true })
+  @JoinColumn({ name: 'typeOfPropertyId' })
+  typeOfProperty: PropertyType;
+
+  @Column({ nullable: true })
+  property_deed: boolean;
 
   @Column({ nullable: true })
   preferredPrice: number;
