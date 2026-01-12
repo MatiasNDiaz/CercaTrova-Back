@@ -22,7 +22,13 @@ export class SearchPreference {
   user: User;
 
   @Column({ nullable: true })
-  zone: string;
+  zone?: string;
+
+  @Column({ nullable: true })
+  localidad: string; // Nuevo
+
+  @Column({ nullable: true })
+  barrio: string;    // Nuevo
 
   @ManyToOne(() => PropertyType, { nullable: true, eager: true })
   @JoinColumn({ name: 'typeOfPropertyId' })

@@ -15,6 +15,14 @@ export class CreateSearchPreferenceDto {
   zone?: string;
 
   @IsOptional()
+  @IsString()
+  localidad?: string; // Nuevo
+
+  @IsOptional()
+  @IsString()
+  barrio?: string;    // Nuevo
+
+  @IsOptional()
   @IsBoolean()
   property_deed?: boolean;
 

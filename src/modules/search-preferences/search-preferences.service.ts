@@ -30,6 +30,11 @@ export class SearchPreferencesService {
     const user = await this.usersService.getUserById(userId);
     if (!user) throw new Error('Usuario no encontrado');
 
+    // Aplicar trim a los campos de texto
+  if (dto.localidad) dto.localidad = dto.localidad.trim();
+  if (dto.barrio) dto.barrio = dto.barrio.trim();
+  if (dto.zone) dto.zone = dto.zone.trim();
+
     const pref = this.repo.create({ ...dto, user });
 
     // 🔹 Asignar la entidad PropertyType si envían typeOfPropertyId

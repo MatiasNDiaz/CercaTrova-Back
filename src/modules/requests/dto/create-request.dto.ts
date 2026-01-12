@@ -3,70 +3,42 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Min,
-  Max,
   IsUUID,
   IsEnum,
 } from 'class-validator';
-import { operationType, propertyType } from './enumsRequest';
+
+
+export enum OperationType {
+  ALQUILER = "alquiler",
+  VENTA = "venta",
+}
+
+// Nota: Aunque aquí usamos enum para estadísticas rápidas, 
+// el Admin verá tendencias de qué tipos se piden más.
+export enum PropertyTypeEnum {
+  CASA = "casa",
+  DEPARTAMENTO = "departamento",
+  TERRENO = "terreno",
+  LOCAL = "local",
+  OFICINA = "oficina"
+}
 
 export class CreateUserSearchFeedbackDto {
+  @IsOptional() @IsNumber() rooms?: number;
+  @IsOptional() @IsNumber() bathrooms?: number;
+  @IsOptional() @IsString() zone?: string;
+  @IsOptional() @IsString() localidad?: string; // Sincronizado
+  @IsOptional() @IsString() barrio?: string;    // Sincronizado
   
-  @IsOptional()
-  @IsNumber()
-  rooms?: number;
+  @IsOptional() @IsNumber() priceMin?: number;
+  @IsOptional() @IsNumber() priceMax?: number;
 
-  @IsOptional()
-  @IsNumber()
-  bathrooms?: number;
+  @IsOptional() @IsEnum(PropertyTypeEnum) propertyType?: PropertyTypeEnum;
+  @IsOptional() @IsEnum(OperationType) operationType?: OperationType;
 
-  @IsOptional()
-  @IsString()
-  zone?: string;
+  @IsOptional() @IsNumber() antiquityMax?: number;
+  @IsOptional() @IsBoolean() hasGarage?: boolean;
+  @IsOptional() @IsBoolean() hasPatio?: boolean;
+  @IsOptional() @IsString() notes?: string;
 
-  @IsOptional()
-  @IsString()
-  city?: string;
-
-  @IsOptional()
-  @IsNumber()
-  priceMin?: number;
-
-  @IsOptional()
-  @IsNumber()
-  priceMax?: number;
-
-  @IsOptional()
-  @IsEnum(propertyType)
-  propertyType?: propertyType;
-
-  @IsOptional()
-  @IsEnum(operationType)
-  operationType?: operationType;
- // "alquiler" | "venta"
-
-  @IsOptional()
-  @IsNumber()
-  antiquityMin?: number;
-
-  @IsOptional()
-  @IsNumber()
-  antiquityMax?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  hasGarage?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  hasPatio?: boolean;
-
-  @IsOptional()
-  @IsString()
-  notes?: string;
-
-  // ⚠️ Obligatorio para evitar spam
-  @IsString()
-  @IsUUID('4')
-  deviceId: string;
-}
+  @IsString() @IsUUID('4') deviceId: string;}

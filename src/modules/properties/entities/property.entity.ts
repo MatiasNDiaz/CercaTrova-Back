@@ -21,6 +21,15 @@ export class Property {
     description: string;
 
     @Column()
+    provincia: string; // Ej: "Córdoba"
+
+    @Column()
+    localidad: string; // Ej: "Villa Carlos Paz"
+
+    @Column()
+    barrio: string;    // Ej: "La Cuesta"
+    
+    @Column()
     zone: string;
 
     @Column()

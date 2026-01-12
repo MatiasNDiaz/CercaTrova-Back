@@ -242,60 +242,109 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
     return this.propertyImagesService.deleteImage(imageId);
   }
 
+  
+
   // ... filter() se mantiene igual que lo tenías
-  async filter(filters: PropertyFilterDto) {
-    const qb = this.propertyRepo
-      .createQueryBuilder('property')
-      .leftJoinAndSelect('property.typeOfProperty', 'typeOfProperty')
-      .leftJoinAndSelect('property.agent', 'agent');
+ async filter(filters: PropertyFilterDto) {
+  const { 
+    page, limit, title, zone, rooms, provincia, localidad, barrio, bathrooms, garage, patio, 
+    minPrice, maxPrice, minM2, maxM2, hasDeed, typeOfPropertyId, status 
+  } = filters;
 
-    if (filters.title) {
-      qb.andWhere('LOWER(property.title) LIKE LOWER(:title)', {
-        title: `%${filters.title}%`,
-      });
-    }
-
-    if (filters.zone) {
-      qb.andWhere('LOWER(property.zone) LIKE LOWER(:zone)', {
-        zone: `%${filters.zone}%`,
-      });
-    }
-
-    if (filters.rooms) qb.andWhere('property.rooms = :rooms', { rooms: filters.rooms });
-
-    if (filters.bathrooms)
-      qb.andWhere('property.bathrooms = :bathrooms', {
-        bathrooms: filters.bathrooms,
-      });
-
-    if (filters.garage !== undefined)
-      qb.andWhere('property.garage = :garage', {
-        garage: filters.garage === 'true',
-      });
-
-    if (filters.patio !== undefined)
-      qb.andWhere('property.patio = :patio', {
-        patio: filters.patio === 'true',
-      });
-
-    if (filters.minPrice)
-      qb.andWhere('property.price >= :minPrice', {
-        minPrice: filters.minPrice,
-      });
-
-    if (filters.maxPrice)
-      qb.andWhere('property.price <= :maxPrice', {
-        maxPrice: filters.maxPrice,
-      });
-
-    if (filters.status)
-      qb.andWhere('property.status = :status', { status: filters.status });
-
-    if (filters.typeOfPropertyId)
-      qb.andWhere('typeOfProperty.id = :typeOfPropertyId', {
-        typeOfPropertyId: filters.typeOfPropertyId,
-      });
-
-    return qb.getMany();
+  // 1. Calculamos el salto (skip) para la paginación
+  if(!page || !limit) {
+    throw new BadRequestException('page y limit son obligatorios para la paginación');
   }
+  const skip = (page - 1) * limit;
+
+  // 2. Iniciamos el QueryBuilder
+  const qb = this.propertyRepo.createQueryBuilder('property')
+    .leftJoinAndSelect('property.typeOfProperty', 'type')
+    .leftJoinAndSelect('property.images', 'images')
+    .leftJoinAndSelect('property.agent', 'agent')
+    // Agregamos el promedio de ratings directamente
+    .leftJoin('property.ratings', 'r')
+    .addSelect('AVG(r.score)', 'property_ratingAverage')
+    .groupBy('property.id')
+    .addGroupBy('type.id')
+    .addGroupBy('images.id')
+    .addGroupBy('agent.id');
+
+  // --- FILTROS DE TEXTO INTELIGENTES ---
+  if (title) {
+    // Usamos ILIKE (Postgres) para que no importe mayúsculas/minúsculas
+    qb.andWhere('property.title ILIKE :title', { title: `%${title}%` });
+  }
+
+  if (zone) {
+    qb.andWhere('property.zone ILIKE :zone', { zone: `%${zone}%` });
+  }
+
+  // --- NUEVA LÓGICA DE UBICACIÓN ---
+  if (provincia) {
+    qb.andWhere('property.provincia ILIKE :provincia', { provincia: `%${provincia}%` });
+  }
+
+  if (localidad) {
+    qb.andWhere('property.localidad ILIKE :localidad', { localidad: `%${localidad}%` });
+  }
+
+  if (barrio) {
+    qb.andWhere('property.barrio ILIKE :barrio', { barrio: `%${barrio}%` });
+  }
+  // --- FILTROS DE RANGO ---
+  if (minPrice) qb.andWhere('property.price >= :minPrice', { minPrice });
+  if (maxPrice) qb.andWhere('property.price <= :maxPrice', { maxPrice });
+
+  if (minM2) qb.andWhere('property.m2 >= :minM2', { minM2 });
+  if (maxM2) qb.andWhere('property.maxM2 <= :maxM2', { maxM2 });
+
+  // --- FILTROS EXACTOS ---
+  if (rooms) qb.andWhere('property.rooms = :rooms', { rooms });
+  if (bathrooms) qb.andWhere('property.bathrooms = :bathrooms', { bathrooms });
+  
+  if (typeOfPropertyId) {
+    qb.andWhere('type.id = :typeId', { typeId: typeOfPropertyId });
+  }
+
+  // --- FILTROS BOOLEANOS ---
+  // Convertimos el string 'true'/'false' de la URL a booleano real
+  if (garage !== undefined) {
+    qb.andWhere('property.garage = :garage', { garage: garage === 'true' });
+  }
+  if (patio !== undefined) {
+    qb.andWhere('property.patio = :patio', { patio: patio === 'true' });
+  }
+  if (hasDeed !== undefined) {
+    qb.andWhere('property.property_deed = :hasDeed', { hasDeed: hasDeed === 'true' });
+  }
+
+  // --- LÓGICA DE ESTADO (SEGURIDAD) ---
+  if (status) {
+    qb.andWhere('property.status = :status', { status });
+  } else {
+    // Si no pide un estado, solo mostramos las disponibles por defecto
+    qb.andWhere('property.status = :defaultStatus', { defaultStatus: 'available' });
+  }
+
+  // --- PAGINACIÓN Y EJECUCIÓN ---
+  qb.orderBy('property.created_at', 'DESC') // Lo más nuevo primero
+    .skip(skip)
+    .take(limit);
+
+  // getManyAndCount nos da los registros y el total para el Frontend
+  const [items, total] = await qb.getManyAndCount();
+
+  // 4. Retornamos objeto paginado profesional
+  return {
+    data: items,
+    meta: {
+      totalItems: total,
+      itemCount: items.length,
+      itemsPerPage: limit,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+    }
+  };
 }
+  }

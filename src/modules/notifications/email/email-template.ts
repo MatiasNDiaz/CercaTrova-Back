@@ -1,5 +1,5 @@
 const LOGO_URL =
-  'https://res.cloudinary.com/dmvybzxnv/image/upload/v1765756207/properties/rtgooke0mob70fklrf9y.png';
+  'https://res.cloudinary.com/dmvybzxnv/image/upload/v1768176230/properties/ctflc5qkaoitg2aas6ht.jpg';
 
 // Verde del logo (email-safe)
 const BRAND_GREEN = '#0b7a4b';
@@ -19,24 +19,21 @@ export const EmailTemplates = {
         box-shadow:0 4px 12px rgba(0,0,0,0.08);
       ">
 
-     <div style="
+    <div style="
   text-align:center;
-  margin:1px 0;
-  width:240px;
-  height:200px;
-  overflow:hidden;
-  margin-left:auto;
-  margin-right:auto;
+  margin:10px auto; /* Agregamos un poco más de aire arriba/abajo */
+  padding: 10px 0
+  width:100%;       /* Ocupa el ancho disponible del wrapper */
+  max-width:280px;  /* Un poco más grande para que no se corte la punta */
 ">
   <img
     src="${LOGO_URL}"
     alt="CercaTrova Inmobiliaria"
     style="
-      width:106%;
+      width:100%;       /* Que se ajuste al max-width del div */
       height:auto;
-      display:block;
-      margin:0 auto;
-      transform:translateX(-1%);
+      display:inline-block;
+      border:none;
     "
   />
 </div>
@@ -86,7 +83,7 @@ export const EmailTemplates = {
   // -----------------------------------------------------
   // NUEVA PROPIEDAD (GLOBAL)
   // -----------------------------------------------------
-  newProperty: (title: string, zone: string, price: number, images: string[]) =>
+  newProperty: (title: string, location: string, price: number, images: string[]) =>
     EmailTemplates.wrapper(`
       <h2 style="color:${BRAND_GREEN};">
         Nueva propiedad publicada
@@ -106,7 +103,7 @@ export const EmailTemplates = {
           <strong style="color:${BRAND_GREEN};">${title}</strong>
         </p>
         <p style="color:#555;">
-          Zona: <strong style="color:${BRAND_GREEN};">${zone}</strong>
+          Ubicación: <strong style="color:${BRAND_GREEN};">${location}</strong>
         </p>
         <p style="color:#555;">
           Precio: <strong style="color:${BRAND_GREEN};">$${price}</strong>

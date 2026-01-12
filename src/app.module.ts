@@ -18,7 +18,7 @@ import { CommentsModule } from './modules/comments/comments.module';
 import { EmailModule } from './modules/notifications/email/email.module';
 import { NotificationModule } from './modules/notifications/notifications.module';
 import { SearchPreferencesModule } from './modules/search-preferences/search-preferences.module';
-
+import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest.module';
 @Module({
   // La propiedad 'imports' define los módulos que este módulo necesita.
   imports: [
@@ -58,6 +58,7 @@ import { SearchPreferencesModule } from './modules/search-preferences/search-pre
     EmailModule,
     NotificationModule,
     SearchPreferencesModule,
+    PropertyRequestModule,
   ],
   providers: [BootstrapService],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,

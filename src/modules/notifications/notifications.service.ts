@@ -19,7 +19,7 @@ export class NotificationService {
   ) {}
 
   // -----------------------------------------------------
-  // MATCHES CON MÁRGENES (LÓGICA MEJORADA)
+  // MATCHES CON MÁRGENES
   // -----------------------------------------------------
 
   private priceMatches(propertyPrice: number, preferredPrice?: number): boolean {
@@ -33,7 +33,6 @@ export class NotificationService {
     return propertyPrice >= min && propertyPrice <= max;
   }
 
-  // Tolerancia m2: 15% menos o hasta 30% más
   private m2Matches(propM2: number, prefM2: number): boolean {
     if (!prefM2 || !propM2) return false;
     const min = prefM2 * 0.85; 
@@ -41,19 +40,17 @@ export class NotificationService {
     return propM2 >= min && propM2 <= max;
   }
 
-  // Tolerancia Antigüedad: Hasta 2 años adicionales al límite
   private antiquityMatches(propAnt: number, prefMaxAnt: number): boolean {
     if (prefMaxAnt === null || prefMaxAnt === undefined) return true;
     return Number(propAnt) <= (Number(prefMaxAnt) + 2);
   }
 
   // -----------------------------------------------------
-  // NUEVA PROPIEDAD → LÓGICA DE MATCH + EVITAR SPAM
+  // NUEVA PROPIEDAD
   // -----------------------------------------------------
   async handleNewProperty(property: Property) {
     const prefs = await this.searchPrefService.findAllWithUsers();
     const imageUrls = property.images?.map((i) => i.url) ?? [];
-    
     const notifiedUserIds = new Set<number>();
 
     for (const pref of prefs) {
@@ -64,8 +61,13 @@ export class NotificationService {
       const prefTypeId = pref.typeOfProperty?.id ? Number(pref.typeOfProperty.id) : null;
       const propTypeId = property.typeOfProperty?.id ? Number(property.typeOfProperty.id) : null;
 
+      // --- LOG DE DEBUG ---
+      console.log(`\n[DEBUG] Evaluando Match - Usuario: ${pref.user.id} (${pref.user.email})`);
+      console.log(`[DEBUG] Tipo Prop: ${propTypeId} | Tipo Pref: ${prefTypeId}`);
+
       // 1. FILTRO ESTRICTO DE TIPO
       if (prefTypeId && prefTypeId !== propTypeId) {
+        console.log(`[DEBUG] Salto: Tipos no coinciden.`);
         continue;
       }
 
@@ -79,6 +81,8 @@ export class NotificationService {
         pref.m2,
         pref.maxAntiquity,
         pref.property_deed,
+        pref.barrio, 
+        pref.localidad,
       ];
       
       const totalCriteria = criteriaToCheck.filter(
@@ -90,29 +94,43 @@ export class NotificationService {
         matched.push(`Zona: ${pref.zone}`);
       }
 
-      // ---------------- TIPO ----------------
-      if (prefTypeId && prefTypeId === propTypeId) {
-        matched.push(`Tipo de propiedad: ${property.typeOfProperty.name}`);
+      // ---------------- UBICACIÓN (LOCALIDAD Y BARRIO) ----------------
+      // Comprobamos Localidad
+      if (pref.localidad && property.localidad?.trim().toLowerCase() === pref.localidad.toLowerCase()) {
+        matched.push(`Localidad: ${pref.localidad}`);
       }
 
-      // ---------------- PRECIO ----------------
+      // Comprobamos Barrio (Si el usuario especificó barrio, debe coincidir)
+      if (pref.barrio && property.barrio?.trim().toLowerCase() === pref.barrio.toLowerCase()) {
+        matched.push(`Barrio: ${pref.barrio}`);
+      }
+
+      // ---------------- TIPO ----------------
+      if (prefTypeId && prefTypeId === propTypeId) {
+        matched.push(`Tipo: ${property.typeOfProperty?.name || 'Inmueble'}`);
+      }
+
+      // ---------------- PRECIO (Informativo) ----------------
       if (pref.preferredPrice && this.priceMatches(property.price, pref.preferredPrice)) {
-        matched.push(`Precio cercano a $${pref.preferredPrice}`);
+        const diff = property.price - pref.preferredPrice;
+        const sign = diff > 0 ? '+' : '';
+        matched.push(`Precio: $${property.price} (${sign}${diff} vs tu busqueda)`);
+        console.log(`[DEBUG] Match Precio: OK`);
       }
 
       // ---------------- HABITACIONES ----------------
       if (pref.minRooms && (property.rooms ?? 0) >= pref.minRooms) {
-        matched.push(`Habitaciones: ${pref.minRooms}`);
+        matched.push(`Habitaciones: ${property.rooms} (minimo ${pref.minRooms})`);
       }
 
       // ---------------- BAÑOS ----------------
       if (pref.minBathrooms && (property.bathrooms ?? 0) >= pref.minBathrooms) {
-        matched.push(`Baños: ${pref.minBathrooms}`);
+        matched.push(`Banios: ${property.bathrooms}`);
       }
 
-      // ---------------- M2 (Con Margen) ----------------
+      // ---------------- M2 ----------------
       if (pref.m2 && this.m2Matches(property.m2, pref.m2)) {
-        matched.push(`Superficie: ${property.m2} m² (Cerca de tu búsqueda)`);
+        matched.push(`Superficie: ${property.m2} m2 (Acorde a tu busqueda)`);
       }
 
       // ---------------- ESCRITURAS ----------------
@@ -120,12 +138,14 @@ export class NotificationService {
         matched.push('Tiene escrituras');
       }
 
-      // ---------------- ANTIGÜEDAD (Con Margen) ----------------
+      // ---------------- ANTIGÜEDAD ----------------
       if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null) {
         if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity))) {
-          matched.push(`Antigüedad: acorde a tu preferencia`);
+          matched.push(`Antiguedad: ${property.antiquity} años`);
         }
       }
+
+      console.log(`[DEBUG] Coincidencias: ${matched.length} de ${totalCriteria}`);
 
       // ---------------- ENVÍO DE MATCH ----------------
       if (matched.length > 0) {
@@ -134,19 +154,21 @@ export class NotificationService {
         await this.repo.save(
           this.repo.create({
             user: pref.user,
-            title: '¡Coincidencia encontrada!',
-            message: `Esta propiedad cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
+            title: 'Coincidencia encontrada',
+            message: `Esta propiedad cumple ${matched.length} de tus ${totalCriteria} criterios.`,
           }),
         );
 
         try {
+          // Solo intentamos enviar si no excediste la cuota. 
+          // El try/catch evita que el proceso se rompa si falla el mail.
           await this.emailService.sendEmail(
             pref.user.email,
             'Nueva propiedad según tus preferencias',
             EmailTemplates.matchSearch(
               pref.user.name || 'Usuario',
               property.title,
-              property.zone,
+              `${property.barrio}, ${property.localidad}`,
               property.price,
               imageUrls,
               matched,
@@ -155,7 +177,7 @@ export class NotificationService {
             ),
           );
         } catch (err) {
-          console.error(`Error enviando match mail a ${pref.user.email}`, err);
+          console.error(`[ERROR MAIL] No se pudo enviar a ${pref.user.email}. Posible cuota excedida.`);
         }
       }
     }
@@ -166,7 +188,7 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // NOTIFICACIÓN GLOBAL (CON FILTRO DE EXCLUSIÓN)
+  // NOTIFICACIÓN GLOBAL
   // -----------------------------------------------------
   async broadcastNewProperty(property: Property, excludedIds: Set<number> = new Set()) {
     const allUsers = await this.usersService.getAllUsers();
@@ -179,7 +201,7 @@ export class NotificationService {
       this.repo.create({
         user,
         title: 'Nueva propiedad publicada',
-        message: `Se ha publicado la propiedad: ${property.title}`,
+        message: `Se ha publicado: ${property.title}`,
       }),
     );
     await this.repo.save(notifications);
@@ -188,10 +210,10 @@ export class NotificationService {
       await this.emailService.sendMultipleEmails(
         usersToNotify.map((u) => u.email),
         'Nueva propiedad publicada',
-        EmailTemplates.newProperty(property.title, property.zone, property.price, imageUrls),
+        EmailTemplates.newProperty(property.title, `${property.barrio || ''}, ${property.localidad || ''}`, property.price, imageUrls),
       );
     } catch (err) {
-      console.error('Error enviando mails globales:', err);
+      console.error('[ERROR MAIL GLOBAL] Fallo el envio masivo.');
     }
   }
 
@@ -200,36 +222,26 @@ export class NotificationService {
   // -----------------------------------------------------
   async handlePriceChange(property: Property, oldPrice: number) {
     if ((property.price ?? 0) >= oldPrice) return;
-
     const users = await this.usersService.getAllUsers();
     const imageUrls = property.images?.map((i) => i.url) ?? [];
 
-    const notifications = users
-      .filter((u) => u.email)
-      .map((user) =>
-        this.repo.create({
-          user,
-          title: 'Actualización de precio',
-          message: `La propiedad "${property.title}" bajó su precio de $${oldPrice} a $${property.price}.`,
-        }),
-      );
-
+    const notifications = users.filter((u) => u.email).map((user) =>
+      this.repo.create({
+        user,
+        title: 'Bajo de precio',
+        message: `${property.title} bajo a $${property.price}`,
+      }),
+    );
     await this.repo.save(notifications);
 
     try {
       await this.emailService.sendMultipleEmails(
         users.filter((u) => u.email).map((u) => u.email),
         'Actualización de precio',
-        EmailTemplates.priceDrop(
-          property.title,
-          property.zone,
-          oldPrice,
-          property.price,
-          imageUrls,
-        ),
+        EmailTemplates.priceDrop(property.title, property.zone, oldPrice, property.price, imageUrls),
       );
     } catch (err) {
-      console.error('Error enviando mails de baja de precio:', err);
+      console.error('[ERROR MAIL PRICE] Fallo el envio de baja de precio.');
     }
   }
 

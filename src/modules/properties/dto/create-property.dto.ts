@@ -5,7 +5,6 @@ import {
   IsBoolean,
   IsInt,
   IsEnum,
-  IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { StatusProperty } from './enumsStatusProperty';
@@ -25,6 +24,18 @@ export class CreatePropertyDto {
 
   @IsBoolean()
   property_deed?: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  provincia: string; // Ej: "Córdoba"
+
+  @IsString()
+  @IsNotEmpty()
+  localidad: string; // Ej: "Villa Carlos Paz"
+
+  @IsString()
+  @IsNotEmpty()
+  barrio: string;    // Ej: "La Cuesta"
 
   @IsString()
   @IsNotEmpty()

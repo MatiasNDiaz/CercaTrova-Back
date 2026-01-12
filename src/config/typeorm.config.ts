@@ -13,6 +13,7 @@ import { Notification } from 'src/modules/notifications/entities/notification.en
 import { PropertyType } from 'src/modules/typeOfProperty/entities/typeOfProperty.entity';
 import { PropertyImages } from 'src/modules/ImagesProperty/entities/ImagesPropertyEntity';
 import { Stat } from 'src/modules/stats/entities/stat.entity';
+import { PropertyRequest } from 'src/modules/PropertyRequest/entities/PropertyRequest';
 // Importa más entidades según necesites
 
 dotenv.config(); 
@@ -24,8 +25,8 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    entities: [User, Property, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat],
+    entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat],
    // ⚠️ Solo en desarrollo, ¡cambia a false en Producción!
     synchronize: true, 
-// dropSchema: true
+// dropSchema: true, // Descomenta esta línea si quieres que se borren las tablas y se vuelvan a crear (útil en desarrollo)
 };
