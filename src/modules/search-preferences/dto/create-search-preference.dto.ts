@@ -8,6 +8,7 @@ import {
   Min,
   Max
 } from 'class-validator';
+import { OperationType } from 'src/modules/properties/dto/enumsStatusProperty';
 
 export class CreateSearchPreferenceDto {
   @IsOptional()
@@ -21,6 +22,10 @@ export class CreateSearchPreferenceDto {
   @IsOptional()
   @IsString()
   barrio?: string;    // Nuevo
+
+  @IsOptional()
+  @IsEnum(OperationType)
+  operationType?: OperationType;
 
   @IsOptional()
   @IsBoolean()

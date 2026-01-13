@@ -71,6 +71,13 @@ export class NotificationService {
         continue;
       }
 
+      // 🟢 1.1 FILTRO ESTRICTO DE OPERACIÓN (Venta/Alquiler)
+      // Si el usuario eligió una preferencia y no coincide con la propiedad, saltamos.
+      if (pref.operationType && pref.operationType !== property.operationType) {
+        console.log(`[DEBUG] Salto: Operación no coincide (${pref.operationType} vs ${property.operationType})`);
+        continue;
+      }
+
       // 2. CONTEO DINÁMICO DE CRITERIOS
       const criteriaToCheck = [
         pref.zone,
@@ -79,6 +86,7 @@ export class NotificationService {
         pref.minRooms,
         pref.minBathrooms,
         pref.m2,
+        pref.operationType,
         pref.maxAntiquity,
         pref.property_deed,
         pref.barrio, 
@@ -98,6 +106,11 @@ export class NotificationService {
       // Comprobamos Localidad
       if (pref.localidad && property.localidad?.trim().toLowerCase() === pref.localidad.toLowerCase()) {
         matched.push(`Localidad: ${pref.localidad}`);
+      }
+
+      // 🟢 3. MATCH DE OPERACIÓN (Para el mensaje de la notificación)
+      if (pref.operationType && pref.operationType === property.operationType) {
+        matched.push(`Operación: ${property.operationType}`);
       }
 
       // Comprobamos Barrio (Si el usuario especificó barrio, debe coincidir)
@@ -174,6 +187,7 @@ export class NotificationService {
               matched,
               matched.length,
               totalCriteria,
+              property.operationType
             ),
           );
         } catch (err) {
@@ -210,7 +224,7 @@ export class NotificationService {
       await this.emailService.sendMultipleEmails(
         usersToNotify.map((u) => u.email),
         'Nueva propiedad publicada',
-        EmailTemplates.newProperty(property.title, `${property.barrio || ''}, ${property.localidad || ''}`, property.price, imageUrls),
+        EmailTemplates.newProperty(property.title,  `${property.barrio || ''}, ${property.localidad || ''}`, property.price, imageUrls, property.operationType),
       );
     } catch (err) {
       console.error('[ERROR MAIL GLOBAL] Fallo el envio masivo.');

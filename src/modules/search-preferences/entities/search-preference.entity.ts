@@ -10,6 +10,7 @@ import {
 import { User } from 'src/modules/users/entities/user.entity';
 import { typeOfProperty } from '../dto/enumTypeOfProperty';
 import { PropertyType } from 'src/modules/typeOfProperty/entities/typeOfProperty.entity';
+import { OperationType } from 'src/modules/properties/dto/enumsStatusProperty';
 
 @Entity('search_preferences')
 export class SearchPreference {
@@ -29,6 +30,13 @@ export class SearchPreference {
 
   @Column({ nullable: true })
   barrio: string;    // Nuevo
+
+  @Column({
+    type: 'enum',
+    enum: OperationType,
+    nullable: true, // Nullable por si al usuario le da igual si es venta o alquiler
+  })
+  operationType: OperationType;
 
   @ManyToOne(() => PropertyType, { nullable: true, eager: true })
   @JoinColumn({ name: 'typeOfPropertyId' })

@@ -1,10 +1,12 @@
+// src/modules/PropertyRequest/entities/PropertyRequest.ts
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
 export enum RequestStatus {
+  ENVIADO = 'enviado',
   REVISION = 'en_revision',
-  ACEPTADA = 'aceptada',
-  RECHAZADA = 'rechazada',
+  ACEPTADO = 'aceptado',
+  RECHAZADO = 'rechazado',
 }
 
 @Entity('property_requests')
@@ -12,22 +14,28 @@ export class PropertyRequest {
   @PrimaryGeneratedColumn()
   id: number;
 
-  // --- Ubicación ---
+  // --- Ubicación Exacta (Para que el agente llegue a tasar) ---
   @Column()
   localidad: string;
 
   @Column()
   barrio: string;
 
-  // --- Características Técnicas (Para el filtrado futuro) ---
   @Column()
-  tipoPropiedad: string; // Casa, Departamento, Duplex, Local Comercial, etc.
+  direccion: string; // Calle y número
+
+  @Column({ nullable: true })
+  pisoDepto: string; // Opcional (Ej: "4B" o "PB")
+
+  // --- Características Técnicas ---
+  @Column()
+  tipoPropiedad: string;
 
   @Column()
-  tipoOperacion: string; // Venta o Alquiler
+  tipoOperacion: string;
 
   @Column()
-  estadoConservacion: string; // Excelente, Bueno, A refaccionar
+  estadoConservacion: string;
 
   @Column('float')
   m2Totales: number;
@@ -51,11 +59,11 @@ export class PropertyRequest {
   antiguedad: number;
 
   @Column({ nullable: true })
-  orientacion: string; // Norte, Sur, Este, Oeste
+  orientacion: string;
 
   // --- Información Legal y Comercial ---
   @Column({ default: false })
-  escritura: boolean; // ¿Tiene escritura o boleto?
+  escritura: boolean;
 
   @Column({ default: false })
   impuestosAlDia: boolean;
@@ -66,12 +74,8 @@ export class PropertyRequest {
   @Column('decimal', { precision: 12, scale: 2 })
   precioEstimado: number;
 
-  // --- Multimedia y Notas ---
-  @Column('simple-array', { nullable: true })
-  images: string[];
-
   @Column({ type: 'text', nullable: true })
-  mensajeAgente: string; // Notas aclaratorias del usuario
+  mensajeAgente: string;
 
   // --- Gestión de la Solicitud ---
   @Column({ type: 'enum', enum: RequestStatus, default: RequestStatus.REVISION })
@@ -83,7 +87,7 @@ export class PropertyRequest {
 
   @ManyToOne(() => User, (user) => user.id)
   @JoinColumn({ name: 'userId' })
-  user: User; // De acá sacaremos el mail y WhatsApp automáticamente
+  user: User;
 
   @CreateDateColumn()
   createdAt: Date;

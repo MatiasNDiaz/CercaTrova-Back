@@ -248,7 +248,7 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
  async filter(filters: PropertyFilterDto) {
   const { 
     page, limit, title, zone, rooms, provincia, localidad, barrio, bathrooms, garage, patio, 
-    minPrice, maxPrice, minM2, maxM2, hasDeed, typeOfPropertyId, status 
+    minPrice, maxPrice, minM2, maxM2, hasDeed, typeOfPropertyId, status, operationType
   } = filters;
 
   // 1. Calculamos el salto (skip) para la paginación
@@ -306,6 +306,11 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
   if (typeOfPropertyId) {
     qb.andWhere('type.id = :typeId', { typeId: typeOfPropertyId });
   }
+
+  // --- NUEVO FILTRO: TIPO DE OPERACIÓN ---
+    if (operationType) {
+      qb.andWhere('property.operationType = :operationType', { operationType }); // 👈 Agregado aquí
+    }
 
   // --- FILTROS BOOLEANOS ---
   // Convertimos el string 'true'/'false' de la URL a booleano real

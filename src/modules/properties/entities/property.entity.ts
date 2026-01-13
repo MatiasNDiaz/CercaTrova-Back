@@ -7,7 +7,7 @@ import { Comment } from 'src/modules/comments/entities/comment.entity';
 import { PropertyType } from "src/modules/typeOfProperty/entities/typeOfProperty.entity";
 import { PropertyImages } from "src/modules/ImagesProperty/entities/ImagesPropertyEntity";
 import { IsEnum } from "class-validator";
-import { StatusProperty } from "../dto/enumsStatusProperty";
+import { OperationType, StatusProperty } from "../dto/enumsStatusProperty";
 
 @Entity('property')
 export class Property {
@@ -75,6 +75,13 @@ export class Property {
 
     @ManyToOne(() => User, user => user.properties)
     agent: User;
+
+    @Column({
+    type: 'enum',
+    enum: OperationType,
+    default: OperationType.VENTA,
+    })
+    operationType: OperationType;
 
     @OneToMany(() => Rating, rating => rating.property)
     ratings: Rating[];

@@ -6,3 +6,9 @@ export enum StatusProperty {
     ELIMINADO = 'eliminado',
     PAUSADO = 'en pausa',
 }
+
+export enum OperationType {
+  VENTA = 'venta',
+  ALQUILER = 'alquiler',
+  ALQUILER_TEMPORAL = 'temporal',
+}

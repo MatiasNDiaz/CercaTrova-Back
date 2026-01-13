@@ -7,7 +7,7 @@ import {
   IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { StatusProperty } from './enumsStatusProperty';
+import { OperationType, StatusProperty } from './enumsStatusProperty';
 
 export class CreatePropertyDto {
   @IsString()
@@ -21,6 +21,11 @@ export class CreatePropertyDto {
   @Type(() => Number)
   @IsInt()
   typeOfPropertyId: number;
+// En create-property.dto.ts
+
+  @IsEnum(OperationType)
+  @IsNotEmpty()
+  operationType: OperationType;
 
   @IsBoolean()
   property_deed?: boolean;

@@ -1,22 +1,31 @@
-import { IsString, IsNumber, IsBoolean, IsOptional, IsArray, IsEnum, Min } from 'class-validator';
+// src/modules/PropertyRequest/dto/createRequestPropertyDto.ts
+import { IsString, IsNumber, IsBoolean, IsOptional, Min, IsNotEmpty } from 'class-validator';
 
 export class CreateRequestPropertyDto {
-  // --- Ubicación ---
   @IsString()
+  @IsNotEmpty()
   localidad: string;
 
   @IsString()
+  @IsNotEmpty()
   barrio: string;
 
-  // --- Características Técnicas ---
+  @IsString()
+  @IsNotEmpty()
+  direccion: string; // Calle y Altura
+
+  @IsOptional()
+  @IsString()
+  pisoDepto?: string;
+
   @IsString()
   tipoPropiedad: string;
 
   @IsString()
-  tipoOperacion: string; // Venta o Alquiler
+  tipoOperacion: string;
 
   @IsString()
-  estadoConservacion: string; // Excelente, Bueno, A refaccionar
+  estadoConservacion: string;
 
   @IsNumber()
   @Min(0)
@@ -39,7 +48,6 @@ export class CreateRequestPropertyDto {
   @IsString()
   orientacion?: string;
 
-  // --- Booleanos (Switches en el Front) ---
   @IsBoolean()
   patio: boolean;
 
@@ -55,7 +63,6 @@ export class CreateRequestPropertyDto {
   @IsBoolean()
   aptoCredito: boolean;
 
-  // --- Comercial y Notas ---
   @IsNumber()
   @Min(0)
   precioEstimado: number;
@@ -63,9 +70,4 @@ export class CreateRequestPropertyDto {
   @IsOptional()
   @IsString()
   mensajeAgente?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
 }

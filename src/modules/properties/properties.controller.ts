@@ -35,6 +35,12 @@ export class PropertiesController {
   @Get()
   findAll() {
     return this.propertiesService.findAll();
+
+  }
+  @Public()
+  @Get('filter')
+  filter(@Query() filters: PropertyFilterDto) {
+    return this.propertiesService.filter(filters);
   }
 
   @Public()
@@ -43,11 +49,6 @@ export class PropertiesController {
     return this.propertiesService.findOne(+id);
   }
 
-  @Public()
-  @Get('filter')
-  filter(@Query() filters: PropertyFilterDto) {
-    return this.propertiesService.filter(filters);
-  }
 
   // Crear propiedad + imágenes
   @Roles(Role.ADMIN)

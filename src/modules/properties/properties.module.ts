@@ -17,5 +17,6 @@ import { NotificationModule } from '../notifications/notifications.module';
   ],
   controllers: [PropertiesController],
   providers: [PropertiesService],
+  exports: [PropertiesService],
 })
 export class PropertiesModule {}
