@@ -4,13 +4,33 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly cloudinaryService: CloudinaryService, //
   ) {}
+
+   // Crear o actualizar foto de perfil
+  async updateProfilePhoto(id: number, file: Express.Multer.File): Promise<User> {
+    const user = await this.userRepository.findOneBy({ id });
+    if (!user) throw new BadRequestException('Usuario no encontrado');
+
+    if (!file) throw new BadRequestException('No se proporcionó ninguna imagen');
+
+    // 1. Subir a Cloudinary con el ID del usuario
+    const result = await this.cloudinaryService.uploadProfilePhoto(file, id);
+
+    // 2. Guardar la URL en la propiedad 'photo' de la entidad
+    user.photo = result.secure_url;
+    
+    return await this.userRepository.save(user);
+  }
+
 
   // Crear usuario
   async createUser(createUserDto: CreateUserDto): Promise<User> {
@@ -59,8 +79,15 @@ export class UsersService {
   // Actualizar usuario
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.userRepository.findOneBy({ id });
+    
     if (!user) throw new BadRequestException('Usuario no encontrado');
+// 🔒 SEGURIDAD: Si viene password en el Body, la hasheamos antes de pisar el objeto
+    if (updateUserDto.password) {
+      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    }
 
+    // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
+    Object.assign(user, updateUserDto);
     Object.assign(user, updateUserDto);
     return await this.userRepository.save(user);
   }
@@ -70,6 +97,12 @@ export class UsersService {
     const result = await this.userRepository.delete(id);
     if (result.affected === 0)
       throw new BadRequestException('Usuario no encontrado');
+    // En UsersService.deleteUser
+    const user = await this.userRepository.findOneBy({ id });
+    if (user?.photo) {
+      const publicId = `userPhotoProfile/user_${id}`;
+      await this.cloudinaryService.deleteFile(publicId); // 👈 Limpiás la nube
+    }
   }
 
   // Buscar usuario por email
