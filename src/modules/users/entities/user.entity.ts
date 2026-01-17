@@ -17,10 +17,10 @@ export class User {
     @Column()
     name: string;
 
-    @Column()
+    @Column({ nullable: true })
     surname: string; 
 
-    @Column()
+    @Column({ nullable: true })
     phone: string;
 
     @Column({ nullable: true })
@@ -29,8 +29,11 @@ export class User {
     @Column({ unique: true })
     email: string;
 
-    @Column()
-    password: string;
+    @Column({ nullable: true }) // Google login puede no tener password
+    password?: string;
+
+    @Column({ default: false })
+    profileIncomplete: boolean;
 
     @Column({
     type: 'enum',

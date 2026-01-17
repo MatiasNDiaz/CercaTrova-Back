@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { GoogleAuthService } from './google.auth.service';
 
 @Module({
   // 'imports' configura todos los módulos que proporcionan funcionalidad
@@ -13,6 +14,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   imports:[
     // Proporciona la infraestructura base para "enchufar" estrategias de autenticación (como JWT).
     PassportModule,
+    GoogleAuthService,
 
     // Flujo: registerAsync le dice a NestJS: "Espera a que el ConfigService esté listo (puede tardar unmomento), luego inyéctalo en useFactory, y solo después configura el JwtModule."
 
