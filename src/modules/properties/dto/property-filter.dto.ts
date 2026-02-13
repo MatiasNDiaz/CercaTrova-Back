@@ -1,7 +1,7 @@
 // src/modules/properties/dto/property-filter.dto.ts
 import { Type } from 'class-transformer';
 import { IsOptional, IsInt, IsBooleanString, IsString, Min, Max, IsEnum } from 'class-validator';
-import { OperationType } from './enumsStatusProperty';
+import { OperationType, StatusProperty } from './enumsStatusProperty';
 
 export class PropertyFilterDto {
   // --- PAGINACIÓN (Clave para un Senior) ---
@@ -85,7 +85,7 @@ export class PropertyFilterDto {
   // --- ESTADO ---
   @IsOptional()
   @IsString()
-  status?: string;
+  status?: StatusProperty;
 
   @IsOptional()
   @IsString()
@@ -103,4 +103,9 @@ export class PropertyFilterDto {
   @IsOptional()
   @IsString()
   barrio?: string;
+
+  // En property-filter.dto.ts
+  @IsOptional()
+  @IsString()
+  search?: string; // <--- Este recibirá "casa en la falda con patio..."
 }

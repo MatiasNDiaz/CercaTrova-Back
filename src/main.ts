@@ -1,21 +1,30 @@
-  import { NestFactory } from '@nestjs/core';
-  import { AppModule } from './app.module';
-  import { ValidationPipe } from '@nestjs/common';
-  import { BootstrapService } from './common/bootstraps/bootstrap.service';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { BootstrapService } from './common/bootstraps/bootstrap.service';
+import cookieParser from 'cookie-parser';
 
-  async function bootstrap() {
-    const app = await NestFactory.create(AppModule);
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  
+  app.enableCors({
+    origin: 'http://localhost:3001', // Tu frontend
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, // Importante para que funcionen las cookies/sesiones
+  });
 
-    app.useGlobalPipes(new ValidationPipe({
-      whitelist: true,      // elimina propiedades extras que se envien desde el body, que no están en el DTO
-      forbidNonWhitelisted: true, // lanza error si hay propiedades extra
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },       // convierte JSON en instancias de clases
-    }));
-    
-    const bootstrapService = app.get(BootstrapService);
-    await bootstrapService.createDefaultAdmin(); // 👈 CREA EL ADMIN
-    
-    await app.listen(process.env.PORT ?? 3000);
-  }
-  bootstrap();
+  app.use(cookieParser());
+
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }));
+  
+  const bootstrapService = app.get(BootstrapService);
+  await bootstrapService.createDefaultAdmin();
+  
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();

@@ -38,10 +38,11 @@ export class PropertiesController {
 
   }
   @Public()
-  @Get('filter')
-  filter(@Query() filters: PropertyFilterDto) {
-    return this.propertiesService.filter(filters);
-  }
+@Get('filter') // Asegurate de que NO haya un @Get(':id') arriba de este que pueda atrapar la palabra "filter"
+async filter(@Query() filters: PropertyFilterDto) {
+  console.log('Filtros recibidos:', filters); // Agregá este log para debuguear
+  return this.propertiesService.filter(filters);
+}
 
   @Public()
   @Get(':id')

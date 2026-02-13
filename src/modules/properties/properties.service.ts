@@ -8,7 +8,7 @@ import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Property } from './entities/property.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 import { PropertyFilterDto } from './dto/property-filter.dto';
 import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
@@ -17,6 +17,7 @@ type MulterFile = Express.Multer.File;
 import { PropertyImages } from '../ImagesProperty/entities/ImagesPropertyEntity';
 import { PropertyImagesService } from '../ImagesProperty/propertyImages.service'; // <- asegurate ruta correcta
 import { NotificationService } from '../notifications/notifications.service';
+import { StatusProperty } from './dto/enumsStatusProperty';
 
 @Injectable()
 export class PropertiesService {
@@ -245,111 +246,170 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
   
 
   // ... filter() se mantiene igual que lo tenías
- async filter(filters: PropertyFilterDto) {
-  const { 
-    page, limit, title, zone, rooms, provincia, localidad, barrio, bathrooms, garage, patio, 
-    minPrice, maxPrice, minM2, maxM2, hasDeed, typeOfPropertyId, status, operationType
+async filter(filters: PropertyFilterDto) {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    status,
+    rooms,
+    bathrooms,
+    minPrice,
+    maxPrice,
+    typeOfPropertyId,
+    garage,
+    patio,
+    operationType,
+    barrio,
+    localidad,
+    provincia,
+    maxAntiquity,
+    minM2,
+    maxM2
   } = filters;
 
-  // 1. Calculamos el salto (skip) para la paginación
-  if(!page || !limit) {
-    throw new BadRequestException('page y limit son obligatorios para la paginación');
-  }
   const skip = (page - 1) * limit;
 
-  // 2. Iniciamos el QueryBuilder
-  const qb = this.propertyRepo.createQueryBuilder('property')
-    .leftJoinAndSelect('property.typeOfProperty', 'type')
-    .leftJoinAndSelect('property.images', 'images')
-    .leftJoinAndSelect('property.agent', 'agent')
-    // Agregamos el promedio de ratings directamente
-    .leftJoin('property.ratings', 'r')
-    .addSelect('AVG(r.score)', 'property_ratingAverage')
-    .groupBy('property.id')
-    .addGroupBy('type.id')
-    .addGroupBy('images.id')
-    .addGroupBy('agent.id');
+  const qb = this.propertyRepo.createQueryBuilder('p')
+    .leftJoinAndSelect('p.typeOfProperty', 'type')
+    .leftJoinAndSelect('p.images', 'images')
+    .leftJoinAndSelect('p.agent', 'agent');
 
-  // --- FILTROS DE TEXTO INTELIGENTES ---
-  if (title) {
-    // Usamos ILIKE (Postgres) para que no importe mayúsculas/minúsculas
-    qb.andWhere('property.title ILIKE :title', { title: `%${title}%` });
-  }
-
-  if (zone) {
-    qb.andWhere('property.zone ILIKE :zone', { zone: `%${zone}%` });
-  }
-
-  // --- NUEVA LÓGICA DE UBICACIÓN ---
-  if (provincia) {
-    qb.andWhere('property.provincia ILIKE :provincia', { provincia: `%${provincia}%` });
-  }
-
-  if (localidad) {
-    qb.andWhere('property.localidad ILIKE :localidad', { localidad: `%${localidad}%` });
-  }
-
-  if (barrio) {
-    qb.andWhere('property.barrio ILIKE :barrio', { barrio: `%${barrio}%` });
-  }
-  // --- FILTROS DE RANGO ---
-  if (minPrice) qb.andWhere('property.price >= :minPrice', { minPrice });
-  if (maxPrice) qb.andWhere('property.price <= :maxPrice', { maxPrice });
-
-  if (minM2) qb.andWhere('property.m2 >= :minM2', { minM2 });
-  if (maxM2) qb.andWhere('property.maxM2 <= :maxM2', { maxM2 });
-
-  // --- FILTROS EXACTOS ---
-  if (rooms) qb.andWhere('property.rooms = :rooms', { rooms });
-  if (bathrooms) qb.andWhere('property.bathrooms = :bathrooms', { bathrooms });
+  // --- 1. PROCESAMIENTO DE BÚSQUEDA INTELIGENTE (NLP) ---
+  let searchRemaining = "";
   
-  if (typeOfPropertyId) {
-    qb.andWhere('type.id = :typeId', { typeId: typeOfPropertyId });
-  }
+  if (search && search.trim() !== "") {
+    let s = decodeURIComponent(search).toLowerCase()
+            .replace(/²/g, '2')
+            .replace(/\s+/g, ' ')
+            .trim();
 
-  // --- NUEVO FILTRO: TIPO DE OPERACIÓN ---
-    if (operationType) {
-      qb.andWhere('property.operationType = :operationType', { operationType }); // 👈 Agregado aquí
+    // A) DETECCIÓN DE TIPOS (Prioridad nombres largos para evitar cortes en Regex)
+    if (!typeOfPropertyId) {
+      if (s.match(/\b(departamentos|departamento|deptos|depto)\b/i)) qb.andWhere('type.name = :tName', { tName: 'departamento' });
+      else if (s.match(/\b(casas|casa)\b/i)) qb.andWhere('type.name = :tName', { tName: 'casa' });
+      else if (s.match(/\b(locales|local|comercio|negocio)\b/i)) qb.andWhere('type.name = :tName', { tName: 'local' });
+      else if (s.match(/\b(oficinas|oficina)\b/i)) qb.andWhere('type.name = :tName', { tName: 'oficina' });
+      else if (s.match(/\b(baldío|baldio|terrenos|terreno|lotes|lote)\b/i)) qb.andWhere('type.name = :tName', { tName: 'baldío' });
     }
 
-  // --- FILTROS BOOLEANOS ---
-  // Convertimos el string 'true'/'false' de la URL a booleano real
+    // B) DETECCIÓN DE OPERACIÓN
+    if (!operationType) {
+      if (s.match(/\b(alquileres|alquiler|alquila|alquilo|renta)\b/i)) qb.andWhere('p.operationType = :opText', { opText: 'alquiler' });
+      else if (s.match(/\b(ventas|venta|vende|vendo|comprar)\b/i)) qb.andWhere('p.operationType = :opText', { opText: 'venta' });
+    }
+
+    // C) EXTRAER METROS CUADRADOS
+    const m2Match = s.match(/(\d+)\s*(metros cuadrados|metro cuadrado|metros|metro|mts|mt|m2)/i);
+    if (m2Match) {
+      const metros = parseInt(m2Match[1]);
+      qb.andWhere('p.m2 BETWEEN :mMin AND :mMax', { mMin: metros * 0.9, mMax: metros * 1.1 });
+      s = s.replace(m2Match[0], '');
+    }
+
+    
+
+    // D) EXTRAER HABITACIONES (Orden correcto: Largo primero)
+    const roomsMatch = s.match(/(\d+)\s*(habitaciones|habitacion|dormitorios|dormitorio|cuartos|cuarto|rooms|room|hab)/i);
+    if (roomsMatch) {
+      qb.andWhere('p.rooms = :rSearch', { rSearch: parseInt(roomsMatch[1]) });
+      s = s.replace(roomsMatch[0], '');
+    }
+
+    // E) EXTRAER BAÑOS (Orden correcto: Largo primero)
+    const bathsMatch = s.match(/(\d+)\s*(baños|baño|banos|bano|toilets|toilet|bañ|ban)/i);
+    if (bathsMatch) {
+      qb.andWhere('p.bathrooms = :bSearch', { bSearch: parseInt(bathsMatch[1]) });
+      s = s.replace(bathsMatch[0], '');
+    }
+
+    // F) EXTRAER PRECIO Y ANTIGÜEDAD
+    const priceMatch = s.match(/(\d+)\s*(k|mil|usd|pesos|dolares|dólares|dolar|dólar)/i);
+    const priceBigMatch = s.match(/(\d{5,})/);
+    if (priceMatch || priceBigMatch) {
+      let val = 0; let mTxt = "";
+      if (priceMatch) {
+        val = parseInt(priceMatch[1]);
+        if (s.includes('k') || s.includes('mil')) val *= 1000;
+        mTxt = priceMatch[0];
+      } else if (priceBigMatch) {
+        val = parseInt(priceBigMatch[1]);
+        mTxt = priceBigMatch[0];
+      }
+      if (val >= 1000) {
+        qb.andWhere('p.price BETWEEN :pMin AND :pMax', { pMin: val * 0.8, pMax: val * 1.2 });
+        s = s.replace(mTxt, '');
+      }
+    }
+
+    const antiMatch = s.match(/(\d+)\s*(antigüedad|antiguedad|años|año|anos|ano)/i);
+    if (antiMatch) {
+      qb.andWhere('p.antiquity <= :aSearch', { aSearch: parseInt(antiMatch[1]) });
+      s = s.replace(antiMatch[0], '');
+    }
+
+    // G) LIMPIEZA DE RUIDO (Añadí "en", "con", etc., para que solo quede el lugar)
+    const noise = /\b(en|con|de|un|una|tenga|que|busco|necesito|casa|depto|departamento|venta|alquiler|local|oficina|baldío|baldio|habitacion|habitaciones|baño|baños|bano|banos|dormitorio|dormitorios|cuarto|cuartos|vende|alquila|metros|m2)\b/gi;
+    searchRemaining = s.replace(noise, '').replace(/\s+/g, ' ').trim();
+  }
+
+  // --- 2. FILTROS EXPLÍCITOS (Los que vienen de los selectores o inputs directos) ---
+  if (rooms) qb.andWhere('p.rooms = :rooms', { rooms });
+  if (bathrooms) qb.andWhere('p.bathrooms = :bathrooms', { bathrooms });
+  if (typeOfPropertyId) qb.andWhere('type.id = :typeId', { typeId: typeOfPropertyId });
+  if (operationType) qb.andWhere('p.operationType = :opType', { opType: operationType });
+  if (minPrice) qb.andWhere('p.price >= :minPrice', { minPrice });
+  if (maxPrice) qb.andWhere('p.price <= :maxPrice', { maxPrice });
+  if (minM2) qb.andWhere('p.m2 >= :minM2', { minM2 });
+  if (maxM2) qb.andWhere('p.m2 <= :maxM2', { maxM2 });
+  if (maxAntiquity) qb.andWhere('p.antiquity <= :maxAntiquity', { maxAntiquity });
+
+  // Ubicación Manual
+  if (barrio) qb.andWhere('unaccent(p.barrio) ILIKE unaccent(:barrio)', { barrio: `%${barrio}%` });
+  if (localidad) qb.andWhere('unaccent(p.localidad) ILIKE unaccent(:localidad)', { localidad: `%${localidad}%` });
+  if (provincia) qb.andWhere('unaccent(p.provincia) ILIKE unaccent(:provincia)', { provincia: `%${provincia}%` });
+
+  // Booleanos
   if (garage !== undefined) {
-    qb.andWhere('property.garage = :garage', { garage: garage === 'true' });
+    const hasGarage = String(garage) === 'true';
+    qb.andWhere('p.garage = :hasGarage', { hasGarage });
   }
   if (patio !== undefined) {
-    qb.andWhere('property.patio = :patio', { patio: patio === 'true' });
-  }
-  if (hasDeed !== undefined) {
-    qb.andWhere('property.property_deed = :hasDeed', { hasDeed: hasDeed === 'true' });
+    const hasPatio = String(patio) === 'true';
+    qb.andWhere('p.patio = :hasPatio', { hasPatio });
   }
 
-  // --- LÓGICA DE ESTADO (SEGURIDAD) ---
-  if (status) {
-    qb.andWhere('property.status = :status', { status });
-  } else {
-    // Si no pide un estado, solo mostramos las disponibles por defecto
-    qb.andWhere('property.status = :defaultStatus', { defaultStatus: 'available' });
+  // --- 3. BÚSQUEDA TEXTUAL (PRIORIDAD LOCALIDAD) ---
+  if (searchRemaining.length >= 1) {
+    qb.andWhere(new Brackets(inner => {
+      // Moví Localidad y Barrio al principio para que tengan prioridad sobre el título
+      inner.where("unaccent(p.localidad) ILIKE unaccent(:cs)", { cs: `%${searchRemaining}%` })
+           .orWhere("unaccent(p.barrio) ILIKE unaccent(:cs)", { cs: `%${searchRemaining}%` })
+           .orWhere("unaccent(p.title) ILIKE unaccent(:cs)", { cs: `%${searchRemaining}%` })
+           .orWhere("unaccent(p.description) ILIKE unaccent(:cs)", { cs: `%${searchRemaining}%` });
+    }));
   }
 
-  // --- PAGINACIÓN Y EJECUCIÓN ---
-  qb.orderBy('property.created_at', 'DESC') // Lo más nuevo primero
+  // Solo mostrar disponibles
+  qb.andWhere('p.status = :status', { status: status || StatusProperty.DISPONIBLE });
+
+  // Paginación y Orden
+  qb.orderBy('p.created_at', 'DESC')
     .skip(skip)
     .take(limit);
 
-  // getManyAndCount nos da los registros y el total para el Frontend
   const [items, total] = await qb.getManyAndCount();
 
-  // 4. Retornamos objeto paginado profesional
   return {
     data: items,
     meta: {
       totalItems: total,
       itemCount: items.length,
-      itemsPerPage: limit,
       totalPages: Math.ceil(total / limit),
-      currentPage: page,
+      currentPage: Number(page),
     }
   };
 }
+
+
   }

@@ -14,7 +14,6 @@ import { GoogleAuthService } from './google.auth.service';
   imports:[
     // Proporciona la infraestructura base para "enchufar" estrategias de autenticación (como JWT).
     PassportModule,
-    GoogleAuthService,
 
     // Flujo: registerAsync le dice a NestJS: "Espera a que el ConfigService esté listo (puede tardar unmomento), luego inyéctalo en useFactory, y solo después configura el JwtModule."
 
@@ -51,7 +50,8 @@ import { GoogleAuthService } from './google.auth.service';
   // 'providers' son la lógica de negocio (Servicios) y los componentes de verificación (Estrategias).
   providers: [
     AuthService, // Lógica para el login/registro y GENERACIÓN del token.
-    JwtStrategy  // Lógica para la VERIFICACIÓN y validación del token en rutas protegidas.
+    JwtStrategy,  // Lógica para la VERIFICACIÓN y validación del token en rutas protegidas.
+    GoogleAuthService,
   ],
 })
 

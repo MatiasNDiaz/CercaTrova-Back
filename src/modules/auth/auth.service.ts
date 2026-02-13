@@ -38,72 +38,48 @@ export class AuthService {
   }
 
   // LOGIN
-  async login(loginData:LoginDto){
+  async login(loginData: LoginDto) {
+  const userExist = await this.userService.findUserByEmail(loginData.email);
+  if (!userExist) throw new BadRequestException("Credenciales inválidas");
 
-    // validacion de usuario existente
-    const userExist = await this.userService.findUserByEmail(loginData.email)
-    if(!userExist) throw new BadRequestException("Credenciales Invalidas");
-   
-    // ⚠️ Solo validamos contraseña si existe
-    if (!userExist.password) {
+  if (!userExist.password) {
     throw new BadRequestException(
       "Este usuario se registró con Google y no tiene contraseña"
-      );
-    }
-    // comparamos la contraseña que envíe el usuario al loguearse, con la contraseña que está hasheada en la base de datos del mismo usaurio
-    const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password)
-    if (!isPasswordValid) throw new BadRequestException("Credenciales inválidas");
-
-    const payload = { 
-      email: userExist.email, 
-      sub: userExist.id,
-      role: userExist.role 
-    };
-
-    // 
-    const token = this.jwtService.sign(payload);
-
-    const { password, ...userWithoutPass } = userExist;
-    
-    return {
-      message: "Login exitoso",
-      user: userWithoutPass,
-      token,
-      typ: 'access'
-    }
+    );
   }
 
-  async googleLogin(idToken: string) {
-  // 1️⃣ Verificamos el token con Google
+  const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password);
+  if (!isPasswordValid) throw new BadRequestException("Credenciales inválidas");
+
+  const payload = { email: userExist.email, sub: userExist.id, role: userExist.role };
+  const token = this.jwtService.sign(payload);
+
+  const { password, ...userWithoutPass } = userExist;
+  return { token, user: userWithoutPass }; // ✅ cambio clave
+}
+// LOGIN CON GOOGLE
+async googleLogin(idToken: string) {
   const googleUser = await this.googleAuthService.verifyIdToken(idToken);
 
-  // 2️⃣ Buscamos usuario por email
   let user = await this.userService.findUserByEmail(googleUser.email);
-
-  // 3️⃣ Si no existe → creamos usuario parcial
   if (!user) {
     const partialUser: CreateUserDto = {
       name: googleUser.name || 'Nombre',
       surname: googleUser.surname || 'Apellido',
       email: googleUser.email,
       photo: googleUser.photo,
-      password: '',  // o null si DB lo permite
-      phone: '',     // rellenás vacío
+      password: '',  
+      phone: '',     
       role: Role.USER,
     };
     user = await this.userService.createUser(partialUser);
   }
 
-  // 4️⃣ Generar JWT o cookie
   const payload = { email: user.email, sub: user.id, role: user.role };
   const token = this.jwtService.sign(payload);
 
   const { password, ...userWithoutPass } = user;
-  return {
-    message: 'Login con Google exitoso',
-    user: userWithoutPass,
-    token,
-    typ: 'access',
-  };
+  return { token, user: userWithoutPass }; // ✅ cambio clave
 }
+
 }
