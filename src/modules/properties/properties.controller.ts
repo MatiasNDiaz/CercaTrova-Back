@@ -37,12 +37,13 @@ export class PropertiesController {
     return this.propertiesService.findAll();
 
   }
+
   @Public()
-@Get('filter') // Asegurate de que NO haya un @Get(':id') arriba de este que pueda atrapar la palabra "filter"
-async filter(@Query() filters: PropertyFilterDto) {
+  @Get('filter') // Asegurate de que NO haya un @Get(':id') arriba de este que pueda atrapar la palabra "filter"
+  async filter(@Query() filters: PropertyFilterDto) {
   console.log('Filtros recibidos:', filters); // Agregá este log para debuguear
   return this.propertiesService.filter(filters);
-}
+  }
 
   @Public()
   @Get(':id')
@@ -105,4 +106,12 @@ async filter(@Query() filters: PropertyFilterDto) {
   async deleteImage(@Param('id') id: number) {
     return this.propertiesService.deleteImage(id);
   }
+
+  // Traer la Localidad, Barrio y Zona para incluir los valores reales en los Selects de los filtros
+  @Public()
+  @Get('filters/locations')
+  getLocationFilters() {
+  return this.propertiesService.getLocationFilters();
+  }
+
 }

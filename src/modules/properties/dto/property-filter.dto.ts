@@ -80,7 +80,7 @@ export class PropertyFilterDto {
 
   @IsOptional()
   @IsBooleanString()
-  hasDeed?: string; // Para el campo property_deed de la entidad
+  property_deed?: string; // Para el campo property_deed de la entidad
 
   // --- ESTADO ---
   @IsOptional()

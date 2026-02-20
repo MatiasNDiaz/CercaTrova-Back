@@ -243,7 +243,32 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
     return this.propertyImagesService.deleteImage(imageId);
   }
 
-  
+  // Traer la Localidad, Barrio y Zona para incluir los valores reales en los Selects de los filtros
+  async getLocationFilters() {
+  const localidades = await this.propertyRepo
+    .createQueryBuilder('p')
+    .select('DISTINCT p.localidad', 'localidad')
+    .orderBy('p.localidad', 'ASC')
+    .getRawMany();
+
+  const barrios = await this.propertyRepo
+    .createQueryBuilder('p')
+    .select('DISTINCT p.barrio', 'barrio')
+    .orderBy('p.barrio', 'ASC')
+    .getRawMany();
+
+  const zones = await this.propertyRepo
+    .createQueryBuilder('p')
+    .select('DISTINCT p.zone', 'zone')
+    .orderBy('p.zone', 'ASC')
+    .getRawMany();
+
+  return {
+    localidades: localidades.map(l => l.localidad).filter(Boolean),
+    barrios: barrios.map(b => b.barrio).filter(Boolean),
+    zones: zones.map(z => z.zone).filter(Boolean),
+  };
+}
 
   // ... filter() se mantiene igual que lo tenías
 async filter(filters: PropertyFilterDto) {
@@ -261,8 +286,10 @@ async filter(filters: PropertyFilterDto) {
     patio,
     operationType,
     barrio,
+    property_deed,
     localidad,
     provincia,
+    zone,
     maxAntiquity,
     minM2,
     maxM2
@@ -368,6 +395,7 @@ async filter(filters: PropertyFilterDto) {
   if (barrio) qb.andWhere('unaccent(p.barrio) ILIKE unaccent(:barrio)', { barrio: `%${barrio}%` });
   if (localidad) qb.andWhere('unaccent(p.localidad) ILIKE unaccent(:localidad)', { localidad: `%${localidad}%` });
   if (provincia) qb.andWhere('unaccent(p.provincia) ILIKE unaccent(:provincia)', { provincia: `%${provincia}%` });
+  if (zone) qb.andWhere('unaccent(p.zone) ILIKE unaccent(:zone)', {zone: `%${zone}%`,});
 
   // Booleanos
   if (garage !== undefined) {
@@ -377,7 +405,12 @@ async filter(filters: PropertyFilterDto) {
   if (patio !== undefined) {
     const hasPatio = String(patio) === 'true';
     qb.andWhere('p.patio = :hasPatio', { hasPatio });
-  }
+  } 
+
+  if (property_deed !== undefined) {
+  const hasDeed = String(property_deed) === 'true';
+  qb.andWhere('p.property_deed = :hasDeed', { hasDeed });
+}
 
   // --- 3. BÚSQUEDA TEXTUAL (PRIORIDAD LOCALIDAD) ---
   if (searchRemaining.length >= 1) {
