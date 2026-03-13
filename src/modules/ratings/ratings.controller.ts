@@ -19,4 +19,11 @@ export class RatingsController {
     const userId = req.user.id;
     return this.ratingsService.rateProperty(userId, propertyId, score);
   }
+
+  @Get(':propertyId')
+  async getByProperty(
+  @Param('propertyId', ParseIntPipe) propertyId: number,
+  ) {
+  return this.ratingsService.getByProperty(propertyId);
+}
 }

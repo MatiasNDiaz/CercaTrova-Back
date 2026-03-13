@@ -15,7 +15,7 @@ export class CreateGoogleUserDto {
 
   @Transform(({ value }) => value?.trim())
   @IsEmail()
-  email: string;
+  email?: string;
 
   @IsOptional()
   @IsString()

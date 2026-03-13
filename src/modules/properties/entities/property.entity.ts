@@ -12,85 +12,85 @@ import { OperationType, StatusProperty } from "../dto/enumsStatusProperty";
 @Entity('property')
 export class Property {
     @PrimaryGeneratedColumn()
-    id: number;
+    id!: number;
 
     @Column()
-    title: string;
+    title!: string;
 
     @Column()
-    description: string;
+    description!: string;
 
     @Column()
-    provincia: string; // Ej: "Córdoba"
+    provincia!: string; // Ej: "Córdoba"
 
     @Column()
-    localidad: string; // Ej: "Villa Carlos Paz"
+    localidad!: string; // Ej: "Villa Carlos Paz"
 
     @Column()
-    barrio: string;    // Ej: "La Cuesta"
+    barrio!: string;    // Ej: "La Cuesta"
     
     @Column()
-    zone: string;
+    zone!: string;
 
     @Column()
-    rooms: number;
+    rooms!: number;
 
     @Column()
-    bathrooms: number;
+    bathrooms!: number;
 
     @Column({ default: false })
-    property_deed: boolean;
+    property_deed!: boolean;
 
     @Column()
-    garage: boolean;
+    garage!: boolean;
 
     @Column()
-    patio: boolean;
+    patio!: boolean;
 
     @Column({ type: 'int', nullable: true })
-    m2: number;
+    m2!: number;
 
     @Column()
-    antiquity: number;
+    antiquity!: number;
 
     @Column()
-    price: number;
+    price!: number;
 
     @Column()
     @IsEnum(StatusProperty)
-    status: StatusProperty;
+    status!: StatusProperty;
 
     @CreateDateColumn()
-    created_at: Date;
+    created_at!: Date;
 
     @UpdateDateColumn()
-    updated_at: Date;
+    updated_at!: Date;
 
     // Relaciones
     @OneToMany(() => PropertyImages, images => images.property, {
     cascade: true,
     onDelete: 'CASCADE'
     })
-    images: PropertyImages[];
+    images!: PropertyImages[];
 
     @ManyToOne(() => User, user => user.properties)
-    agent: User;
+    agent!: User;
 
     @Column({
     type: 'enum',
     enum: OperationType,
     default: OperationType.VENTA,
     })
-    operationType: OperationType;
+    operationType!: OperationType;
 
     @OneToMany(() => Rating, rating => rating.property)
-    ratings: Rating[];
+    ratings!: Rating[];
 
     @OneToMany(() => Comment, comment => comment.property)
-    comments: Comment[];
+    comments!: Comment[];
 
     @OneToMany(() => Favorite, favorite => favorite.property)
-    favorites: Favorite[];
+    favorites!: Favorite[];
     
     // @OneToMany(() => Request, request => request.property)
     // requests: Request[];
@@ -101,5 +101,5 @@ export class Property {
     referredBy?: User;
 
     @ManyToOne(() => PropertyType, { eager: true })
-    typeOfProperty: PropertyType;
+    typeOfProperty!: PropertyType;
 }

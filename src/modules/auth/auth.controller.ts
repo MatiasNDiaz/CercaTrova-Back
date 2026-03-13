@@ -2,10 +2,10 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Res } from '@nestjs/
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register-auth.dto';
 import { LoginDto } from './dto/login-auth.dto';
-import { CreateGoogleUserDto } from './dto/create-google-user.dto';
+// import { CreateGoogleUserDto } from './dto/create-google-user.dto';
+import { UseGuards, Req } from '@nestjs/common'; // agregá estos imports
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // ajustá el path
 import type { Response } from 'express';
-
-
 
 @Controller('auth')
 export class AuthController {
@@ -30,5 +30,23 @@ async googleLogin(@Body('idToken') idToken: string, @Res({ passthrough: true }) 
   return { message: 'Login con Google exitoso', user };
 }
 
+
+  // 👇 FIX: busca el usuario completo en la DB usando el sub (id) del token
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getMe(@Req() req: any) {
+    return this.authService.getMe(req.user.id);
+  }
+
+  
+@Post('logout')
+logout(@Res({ passthrough: true }) res: Response) {
+  res.clearCookie('access_token', {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === "production"
+});// 👈 borra la cookie del browser
+  return { message: 'Logout exitoso' };
+}
 
 }

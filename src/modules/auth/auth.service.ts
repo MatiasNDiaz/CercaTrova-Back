@@ -82,4 +82,12 @@ async googleLogin(idToken: string) {
   return { token, user: userWithoutPass }; // ✅ cambio clave
 }
 
+// 👇 NUEVO: busca el usuario completo en la DB y lo devuelve sin contraseña
+  async getMe(userId: number) {
+    const user = await this.userService.getUserById(userId);
+    if (!user) throw new BadRequestException('Usuario no encontrado');
+    const { password, ...userWithoutPass } = user;
+    return userWithoutPass;
+  }
+
 }

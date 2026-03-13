@@ -52,6 +52,19 @@ export class CommentsService {
     return this.commentRepo.find({
       where: { property: { id: propertyId } },
       relations: ['user'],
+      select: {
+      id: true,
+      message: true,
+      created_at: true,
+      userId: true,
+      propertyId: true,
+      user: {
+        id: true,
+        name: true,
+        surname: true,
+        photo: true,
+      },
+    },
       order: { created_at: 'DESC' },
     });
   }

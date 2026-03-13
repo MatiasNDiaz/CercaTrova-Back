@@ -12,69 +12,69 @@ import { OperationType, StatusProperty } from './enumsStatusProperty';
 export class CreatePropertyDto {
   @IsString()
   @IsNotEmpty()
-  title: string;
+  title!: string;
 
   @IsString()
   @IsNotEmpty()
-  description: string;
+  description!: string;
 
   @Type(() => Number)
   @IsInt()
-  typeOfPropertyId: number;
+  typeOfPropertyId!: number;
 // En create-property.dto.ts
 
   @IsEnum(OperationType)
   @IsNotEmpty()
-  operationType: OperationType;
+  operationType!: OperationType;
 
   @IsBoolean()
-  property_deed?: boolean;
+  property_deed!: boolean;
 
   @IsString()
   @IsNotEmpty()
-  provincia: string; // Ej: "Córdoba"
+  provincia!: string; // Ej: "Córdoba"
 
   @IsString()
   @IsNotEmpty()
-  localidad: string; // Ej: "Villa Carlos Paz"
+  localidad!: string; // Ej: "Villa Carlos Paz"
 
   @IsString()
   @IsNotEmpty()
-  barrio: string;    // Ej: "La Cuesta"
+  barrio!: string;    // Ej: "La Cuesta"
 
   @IsString()
   @IsNotEmpty()
-  zone: string;
+  zone!: string;
 
   @Type(() => Number)
   @IsNumber()
-  rooms: number;
+  rooms!: number;
 
   @Type(() => Number)
   @IsNumber()
-  bathrooms: number;
+  bathrooms!: number;
 
   @Type(() => Boolean)
   @IsBoolean()
-  garage: boolean;
+  garage!: boolean;
 
   @Type(() => Boolean)
   @IsBoolean()
-  patio: boolean;
+  patio!: boolean;
   
   @Type(() => Number)
   @IsNumber()
-  m2: number;
+  m2!: number;
 
   @Type(() => Number)
   @IsNumber()
-  antiquity: number;
+  antiquity!: number;
 
   @Type(() => Number)
   @IsNumber()
-  price: number;
+  price!: number;
 
   @IsEnum(StatusProperty)
   @IsNotEmpty()
-  status: StatusProperty;
+  status!: StatusProperty;
 }

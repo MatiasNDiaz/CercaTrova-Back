@@ -53,7 +53,7 @@ export class FavoritesService {
 
     return this.favoriteRepo.find({
       where: { user_id: userId },
-      relations: ["property"],
+      relations: ["property", "property.images", "property.typeOfProperty"],
     });
   }
 
@@ -63,7 +63,8 @@ export class FavoritesService {
   async deleteOneFavorite(userId: number, propertyId: number) {
     const favorite = await this.favoriteRepo.findOneBy({
       user_id: userId,
-      property_id: propertyId
+      property_id: propertyId,
+      
     });
 
     if (!favorite) {

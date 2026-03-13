@@ -48,4 +48,21 @@ export class RatingsService {
     const sum = ratings.reduce((acc, r) => acc + r.score, 0);
     return Number((sum / ratings.length).toFixed(2));
   }
+
+  async getByProperty(propertyId: number) {
+  return this.ratingRepo.find({
+    where: { property: { id: propertyId } },
+    relations: ['user'],
+    select: {
+      id: true,
+      score: true,
+      userId: true,
+      user: {
+        id: true,
+        name: true,
+        photo: true,
+      },
+    },
+  });
+}
 }
