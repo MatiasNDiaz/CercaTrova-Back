@@ -1,5 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
-
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
 export enum OperationType {
   ALQUILER = "alquiler",
   VENTA = "venta",
@@ -14,7 +14,6 @@ export enum PropertyTypeEnum {
   LOCAL = "local",
   OFICINA = "oficina"
 }
-
 
 @Entity('user_search_feedback')
 export class UserSearchFeedback {
@@ -41,4 +40,9 @@ export class UserSearchFeedback {
   @Column() deviceId: string;
 
   @CreateDateColumn() createdAt: Date;
+
+  // @ManyToOne(() => User, user => user.requests, {
+  // onDelete: 'CASCADE',
+  // })
+  // user: User;
 }

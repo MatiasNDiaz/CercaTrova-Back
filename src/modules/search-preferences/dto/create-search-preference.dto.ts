@@ -24,6 +24,14 @@ export class CreateSearchPreferenceDto {
   barrio?: string;    // Nuevo
 
   @IsOptional()
+  @IsBoolean()
+  garage?: boolean;
+  
+  @IsOptional()
+  @IsBoolean()
+  patio?: boolean;
+  
+  @IsOptional()
   @IsEnum(OperationType)
   operationType?: OperationType;
 

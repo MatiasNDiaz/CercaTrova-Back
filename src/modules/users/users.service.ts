@@ -6,6 +6,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
 import * as bcrypt from 'bcrypt';
+import { PropertyRequest } from '../PropertyRequest/entities/PropertyRequest';
 
 @Injectable()
 export class UsersService {
@@ -13,6 +14,8 @@ export class UsersService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly cloudinaryService: CloudinaryService, //
+    @InjectRepository(PropertyRequest)
+  private readonly propertyRequestRepository: Repository<PropertyRequest>,
   ) {}
 
    // Crear o actualizar foto de perfil
@@ -88,22 +91,27 @@ export class UsersService {
 
     // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
     Object.assign(user, updateUserDto);
-    Object.assign(user, updateUserDto);
     return await this.userRepository.save(user);
   }
 
   // Eliminar usuario
-  async deleteUser(id: number): Promise<void> {
-    const result = await this.userRepository.delete(id);
-    if (result.affected === 0)
-      throw new BadRequestException('Usuario no encontrado');
-    // En UsersService.deleteUser
-    const user = await this.userRepository.findOneBy({ id });
-    if (user?.photo) {
-      const publicId = `userPhotoProfile/user_${id}`;
-      await this.cloudinaryService.deleteFile(publicId); // 👈 Limpiás la nube
-    }
+async deleteUser(id: number): Promise<void> {
+  // 1. Verificar que existe
+  const user = await this.userRepository.findOneBy({ id });
+  if (!user) throw new BadRequestException('Usuario no encontrado');
+
+  // 2. Borrar sus property_requests primero
+  await this.propertyRequestRepository.delete({ userId: id });
+
+  // 3. Ahora sí borrar el usuario
+  await this.userRepository.delete(id);
+
+  // 4. Limpiar foto de Cloudinary
+  if (user.photo) {
+    const publicId = `userPhotoProfile/user_${id}`;
+    await this.cloudinaryService.deleteFile(publicId);
   }
+}
 
   // Buscar usuario por email
   async findUserByEmail(email: string): Promise<User | null> {

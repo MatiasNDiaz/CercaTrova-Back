@@ -4,11 +4,16 @@ import { PropertyRequest } from './entities/PropertyRequest';
 import { PropertyRequestService } from './propertyRequest.service';
 import { PropertyRequestController } from './propertyRequest.controller';
 import { PropertiesModule } from '../properties/properties.module';
+import { NotificationModule } from '../notifications/notifications.module'; // ← agregar
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PropertyRequest]), PropertiesModule], // Registramos la entidad
+  imports: [
+    TypeOrmModule.forFeature([PropertyRequest]),
+    PropertiesModule,
+    NotificationModule, // ← agregar
+  ],
   controllers: [PropertyRequestController],
   providers: [PropertyRequestService],
-  exports: [PropertyRequestService], // Lo exportamos por si lo necesitamos en el módulo de Properties
+  exports: [PropertyRequestService],
 })
 export class PropertyRequestModule {}

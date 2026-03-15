@@ -1,16 +1,16 @@
-// src/modules/PropertyRequest/propertyRequest.service.ts
-
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PropertyRequest, RequestStatus } from './entities/PropertyRequest';
 import { CreateRequestPropertyDto } from './dto/createRequestPropertyDto';
+import { NotificationService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PropertyRequestService {
   constructor(
     @InjectRepository(PropertyRequest)
     private readonly requestRepo: Repository<PropertyRequest>,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // 1. Crear la solicitud (Usuario logueado)
@@ -18,82 +18,66 @@ export class PropertyRequestService {
     const newRequest = this.requestRepo.create({
       ...dto,
       userId,
-      status: RequestStatus.ENVIADO, // Siempre nace en revisión
+      status: RequestStatus.ENVIADO,
     });
     return await this.requestRepo.save(newRequest);
   }
 
-  // 2. Ver todas las solicitudes (Solo Agente - Vista General)
+  // 2. Ver todas las solicitudes (Solo Agente)
   async findAll(): Promise<PropertyRequest[]> {
     return await this.requestRepo.find({
-      relations: ['user'], // Traemos los datos del dueño para que el agente sepa de quién es
-      order: { createdAt: 'DESC' }, 
+      relations: ['user'],
+      order: { createdAt: 'DESC' },
     });
   }
 
-  // 3. Ver una solicitud en detalle profundo
+  // 3. Ver una solicitud en detalle
   async findOne(id: number): Promise<PropertyRequest> {
     const request = await this.requestRepo.findOne({
       where: { id },
-      relations: ['user'], // Datos de contacto del dueño para la visita
+      relations: ['user'],
     });
-
-    if (!request) {
-      throw new NotFoundException(`La solicitud con ID ${id} no existe`);
-    }
-
+    if (!request) throw new NotFoundException(`La solicitud con ID ${id} no existe`);
     return request;
   }
 
-  // 4. Buscar por Usuario (Usado por el Usuario en su Dashboard y por el Agente en el Perfil)
+  // 4. Buscar por Usuario
+  // ← Fix: devuelve [] en lugar de 404 cuando no hay solicitudes
   async findByUser(userId: number): Promise<PropertyRequest[]> {
-    const requests = await this.requestRepo.find({
+    return await this.requestRepo.find({
       where: { userId },
       order: { createdAt: 'DESC' },
-      relations: ['user'], // Opcional: Incluirlo por si el front necesita el nombre en la cabecera
+      relations: ['user'],
     });
-
-    if (!requests || requests.length === 0) {
-      throw new NotFoundException(`No se encontraron solicitudes para el usuario #${userId}`);
-    }
-
-    return requests;
   }
 
-  // 5. Método para actualizar el estado (Revision, Contactado, Tasando, etc.)
+  // 5. Cambiar estado + notificar al usuario
   async updateStatus(id: number, status: RequestStatus): Promise<PropertyRequest> {
-    const request = await this.findOne(id);
+    const request = await this.findOne(id); // ya trae relations: ['user']
     request.status = status;
-    return await this.requestRepo.save(request);
+    const saved = await this.requestRepo.save(request);
+
+    // Notificar en background — no bloquea la respuesta
+    this.notificationService.handleRequestStatusChange(saved).catch((err) =>
+      console.error('[ERROR] No se pudo notificar cambio de estado:', err),
+    );
+
+    return saved;
   }
 
-  // 6. Eliminar solicitud (Limpieza de base de datos)
+  // 6. Eliminar solicitud
   async remove(id: number): Promise<{ message: string }> {
     const request = await this.findOne(id);
     await this.requestRepo.remove(request);
     return { message: `Solicitud #${id} eliminada correctamente` };
   }
 
-
- // 8. EL USUARIO consulta una solicitud específica de su propia lista.
-async findMyOne(id: number, userIdFromToken: number): Promise<PropertyRequest> {
-  // 1. Buscamos la solicitud por su ID
-  const request = await this.requestRepo.findOne({
-    where: { id }
-  });
-
-  // 2. Si no existe, error 404
-  if (!request) {
-    throw new NotFoundException(`La solicitud #${id} no existe.`);
+  // 7. El usuario ve una solicitud específica suya (con verificación de ownership)
+  async findMyOne(id: number, userIdFromToken: number): Promise<PropertyRequest> {
+    const request = await this.requestRepo.findOne({ where: { id } });
+    if (!request) throw new NotFoundException(`La solicitud #${id} no existe.`);
+    if (request.userId !== userIdFromToken)
+      throw new ForbiddenException('No tenés permiso para ver esta solicitud.');
+    return request;
   }
-
-  // 3. CONDICIONAL DE SEGURIDAD: 
-  // Verificamos si el dueño de la solicitud es el mismo que está logueado
-  if (request.userId !== userIdFromToken) {
-    // Si los IDs son diferentes, bloqueamos el acceso (Error 403)
-    throw new ForbiddenException('No tenés permiso para ver esta solicitud, no te pertenece.');
-  }
-
-  return request;
-}
 }

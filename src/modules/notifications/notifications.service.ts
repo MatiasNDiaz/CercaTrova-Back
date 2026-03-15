@@ -7,6 +7,7 @@ import { SearchPreferencesService } from '../search-preferences/search-preferenc
 import { Property } from '../properties/entities/property.entity';
 import { EmailService } from './email/email.service';
 import { EmailTemplates } from './email/email-template';
+import { PropertyRequest, RequestStatus } from '../PropertyRequest/entities/PropertyRequest';
 
 @Injectable()
 export class NotificationService {
@@ -19,15 +20,13 @@ export class NotificationService {
   ) {}
 
   // -----------------------------------------------------
-  // MATCHES CON MÁRGENES
+  // HELPERS DE MATCHING CON MÁRGENES
   // -----------------------------------------------------
-
   private priceMatches(propertyPrice: number, preferredPrice?: number): boolean {
     if (!preferredPrice || !propertyPrice) return false;
     let tolerancePercent = 6;
     if (preferredPrice >= 50000 && preferredPrice < 150000) tolerancePercent = 7;
     if (preferredPrice >= 150000) tolerancePercent = 5;
-
     const min = preferredPrice * (1 - tolerancePercent / 100);
     const max = preferredPrice * (1 + tolerancePercent / 100);
     return propertyPrice >= min && propertyPrice <= max;
@@ -35,9 +34,7 @@ export class NotificationService {
 
   private m2Matches(propM2: number, prefM2: number): boolean {
     if (!prefM2 || !propM2) return false;
-    const min = prefM2 * 0.85; 
-    const max = prefM2 * 1.30; 
-    return propM2 >= min && propM2 <= max;
+    return propM2 >= prefM2 * 0.85 && propM2 <= prefM2 * 1.30;
   }
 
   private antiquityMatches(propAnt: number, prefMaxAnt: number): boolean {
@@ -46,7 +43,7 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // NUEVA PROPIEDAD
+  // 1. NUEVA PROPIEDAD — matching + broadcast global
   // -----------------------------------------------------
   async handleNewProperty(property: Property) {
     const prefs = await this.searchPrefService.findAllWithUsers();
@@ -56,143 +53,98 @@ export class NotificationService {
     for (const pref of prefs) {
       if (!pref.notifyNewMatches || !pref.user?.email) continue;
 
-      const matched: string[] = [];
-      
       const prefTypeId = pref.typeOfProperty?.id ? Number(pref.typeOfProperty.id) : null;
       const propTypeId = property.typeOfProperty?.id ? Number(property.typeOfProperty.id) : null;
 
-      // --- LOG DE DEBUG ---
-      console.log(`\n[DEBUG] Evaluando Match - Usuario: ${pref.user.id} (${pref.user.email})`);
-      console.log(`[DEBUG] Tipo Prop: ${propTypeId} | Tipo Pref: ${prefTypeId}`);
+      // Filtros estrictos — si no coinciden, saltar
+      if (prefTypeId && prefTypeId !== propTypeId) continue;
+      if (pref.operationType && pref.operationType !== property.operationType) continue;
 
-      // 1. FILTRO ESTRICTO DE TIPO
-      if (prefTypeId && prefTypeId !== propTypeId) {
-        console.log(`[DEBUG] Salto: Tipos no coinciden.`);
-        continue;
-      }
-
-      // 🟢 1.1 FILTRO ESTRICTO DE OPERACIÓN (Venta/Alquiler)
-      // Si el usuario eligió una preferencia y no coincide con la propiedad, saltamos.
-      if (pref.operationType && pref.operationType !== property.operationType) {
-        console.log(`[DEBUG] Salto: Operación no coincide (${pref.operationType} vs ${property.operationType})`);
-        continue;
-      }
-
-      // 2. CONTEO DINÁMICO DE CRITERIOS
+      // Conteo dinámico de criterios activos
       const criteriaToCheck = [
-        pref.zone,
-        pref.typeOfProperty,
-        pref.preferredPrice,
-        pref.minRooms,
-        pref.minBathrooms,
-        pref.m2,
-        pref.operationType,
-        pref.maxAntiquity,
-        pref.property_deed,
-        pref.barrio, 
-        pref.localidad,
+        pref.zone, pref.typeOfProperty, pref.preferredPrice,
+        pref.minRooms, pref.minBathrooms, pref.m2, pref.operationType,
+        pref.maxAntiquity, pref.property_deed, pref.barrio, pref.localidad,
+        pref.garage, pref.patio,
       ];
-      
       const totalCriteria = criteriaToCheck.filter(
         (v) => v !== null && v !== undefined && v !== false
       ).length;
 
-      // ---------------- ZONA ----------------
-      if (pref.zone && property.zone?.toLowerCase().includes(pref.zone.toLowerCase())) {
+      const matched: string[] = [];
+
+      if (pref.zone && property.zone?.toLowerCase().includes(pref.zone.toLowerCase()))
         matched.push(`Zona: ${pref.zone}`);
-      }
 
-      // ---------------- UBICACIÓN (LOCALIDAD Y BARRIO) ----------------
-      // Comprobamos Localidad
-      if (pref.localidad && property.localidad?.trim().toLowerCase() === pref.localidad.toLowerCase()) {
+      if (pref.localidad && property.localidad?.trim().toLowerCase() === pref.localidad.toLowerCase())
         matched.push(`Localidad: ${pref.localidad}`);
-      }
 
-      // 🟢 3. MATCH DE OPERACIÓN (Para el mensaje de la notificación)
-      if (pref.operationType && pref.operationType === property.operationType) {
-        matched.push(`Operación: ${property.operationType}`);
-      }
-
-      // Comprobamos Barrio (Si el usuario especificó barrio, debe coincidir)
-      if (pref.barrio && property.barrio?.trim().toLowerCase() === pref.barrio.toLowerCase()) {
+      if (pref.barrio && property.barrio?.trim().toLowerCase() === pref.barrio.toLowerCase())
         matched.push(`Barrio: ${pref.barrio}`);
-      }
 
-      // ---------------- TIPO ----------------
-      if (prefTypeId && prefTypeId === propTypeId) {
+      if (pref.operationType && pref.operationType === property.operationType)
+        matched.push(`Operación: ${property.operationType}`);
+
+      if (prefTypeId && prefTypeId === propTypeId)
         matched.push(`Tipo: ${property.typeOfProperty?.name || 'Inmueble'}`);
-      }
 
-      // ---------------- PRECIO (Informativo) ----------------
       if (pref.preferredPrice && this.priceMatches(property.price, pref.preferredPrice)) {
         const diff = property.price - pref.preferredPrice;
-        const sign = diff > 0 ? '+' : '';
-        matched.push(`Precio: $${property.price} (${sign}${diff} vs tu busqueda)`);
-        console.log(`[DEBUG] Match Precio: OK`);
+        matched.push(`Precio: $${property.price} (${diff > 0 ? '+' : ''}${diff} vs tu búsqueda)`);
       }
 
-      // ---------------- HABITACIONES ----------------
-      if (pref.minRooms && (property.rooms ?? 0) >= pref.minRooms) {
-        matched.push(`Habitaciones: ${property.rooms} (minimo ${pref.minRooms})`);
-      }
+      if (pref.minRooms && (property.rooms ?? 0) >= pref.minRooms)
+        matched.push(`Habitaciones: ${property.rooms} (mínimo ${pref.minRooms})`);
 
-      // ---------------- BAÑOS ----------------
-      if (pref.minBathrooms && (property.bathrooms ?? 0) >= pref.minBathrooms) {
-        matched.push(`Banios: ${property.bathrooms}`);
-      }
+      if (pref.minBathrooms && (property.bathrooms ?? 0) >= pref.minBathrooms)
+        matched.push(`Baños: ${property.bathrooms}`);
 
-      // ---------------- M2 ----------------
-      if (pref.m2 && this.m2Matches(property.m2, pref.m2)) {
-        matched.push(`Superficie: ${property.m2} m2 (Acorde a tu busqueda)`);
-      }
+      if (pref.m2 && this.m2Matches(property.m2, pref.m2))
+        matched.push(`Superficie: ${property.m2} m² (acorde a tu búsqueda)`);
 
-      // ---------------- ESCRITURAS ----------------
-      if (pref.property_deed === true && property.property_deed === true) {
+      if (pref.property_deed === true && property.property_deed === true)
         matched.push('Tiene escrituras');
-      }
 
-      // ---------------- ANTIGÜEDAD ----------------
-      if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null) {
-        if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity))) {
-          matched.push(`Antiguedad: ${property.antiquity} años`);
-        }
-      }
+      if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null)
+        if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity)))
+          matched.push(`Antigüedad: ${property.antiquity} años`);
 
-      console.log(`[DEBUG] Coincidencias: ${matched.length} de ${totalCriteria}`);
+      // ── NUEVOS: garage y patio ──
+      if (pref.garage === true && property.garage === true)
+        matched.push('Tiene garage');
 
-      // ---------------- ENVÍO DE MATCH ----------------
-      if (matched.length > 0) {
-        notifiedUserIds.add(pref.user.id);
+      if (pref.patio === true && property.patio === true)
+        matched.push('Tiene patio');
 
-        await this.repo.save(
-          this.repo.create({
-            user: pref.user,
-            title: 'Coincidencia encontrada',
-            message: `Esta propiedad cumple ${matched.length} de tus ${totalCriteria} criterios.`,
-          }),
+      if (matched.length === 0) continue;
+
+      notifiedUserIds.add(pref.user.id);
+
+      await this.repo.save(this.repo.create({
+        user: pref.user,
+        title: '¡Propiedad que te puede interesar!',
+        message: `Encontramos una propiedad que cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
+        propertyId: property.id, // <--- PASAR EL ID AQUÍ
+      }));
+
+      try {
+        await this.emailService.sendEmail(
+          pref.user.email,
+          'Nueva propiedad según tus preferencias',
+          EmailTemplates.matchSearch(
+            pref.user.name || 'Usuario',
+            property.title,
+            `${property.barrio}, ${property.localidad}`,
+            property.price,
+            imageUrls,
+            matched,
+            matched.length,
+            totalCriteria,
+            property.operationType,
+          ),
         );
-
-        try {
-          // Solo intentamos enviar si no excediste la cuota. 
-          // El try/catch evita que el proceso se rompa si falla el mail.
-          await this.emailService.sendEmail(
-            pref.user.email,
-            'Nueva propiedad según tus preferencias',
-            EmailTemplates.matchSearch(
-              pref.user.name || 'Usuario',
-              property.title,
-              `${property.barrio}, ${property.localidad}`,
-              property.price,
-              imageUrls,
-              matched,
-              matched.length,
-              totalCriteria,
-              property.operationType
-            ),
-          );
-        } catch (err) {
-          console.error(`[ERROR MAIL] No se pudo enviar a ${pref.user.email}. Posible cuota excedida.`);
-        }
+      } catch {
+        console.error(`[ERROR MAIL] No se pudo enviar a ${pref.user.email}`);
       }
     }
 
@@ -202,7 +154,8 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // NOTIFICACIÓN GLOBAL
+  // 2. BROADCAST GLOBAL — notifica a todos los usuarios
+  //    que NO recibieron ya un mail de matching
   // -----------------------------------------------------
   async broadcastNewProperty(property: Property, excludedIds: Set<number> = new Set()) {
     const allUsers = await this.usersService.getAllUsers();
@@ -211,58 +164,151 @@ export class NotificationService {
     const usersToNotify = allUsers.filter((u) => u.email && !excludedIds.has(u.id));
     if (usersToNotify.length === 0) return;
 
-    const notifications = usersToNotify.map((user) =>
-      this.repo.create({
-        user,
-        title: 'Nueva propiedad publicada',
-        message: `Se ha publicado: ${property.title}`,
-      }),
+    await this.repo.save(
+      usersToNotify.map((user) =>
+        this.repo.create({
+          user,
+          title: 'Nueva propiedad publicada',
+          message: `Se publicó: "${property.title}" en ${property.barrio}, ${property.localidad}.`,
+          propertyId: property.id,
+        }),
+      ),
     );
-    await this.repo.save(notifications);
 
     try {
       await this.emailService.sendMultipleEmails(
         usersToNotify.map((u) => u.email),
-        'Nueva propiedad publicada',
-        EmailTemplates.newProperty(property.title,  `${property.barrio || ''}, ${property.localidad || ''}`, property.price, imageUrls, property.operationType),
+        'Nueva propiedad publicada en CercaTrova',
+        EmailTemplates.newProperty(
+          property.title,
+          `${property.barrio || ''}, ${property.localidad || ''}`,
+          property.price,
+          imageUrls,
+          property.operationType,
+        ),
       );
-    } catch (err) {
-      console.error('[ERROR MAIL GLOBAL] Fallo el envio masivo.');
+    } catch {
+      console.error('[ERROR MAIL GLOBAL] Falló el envío masivo.');
     }
   }
 
   // -----------------------------------------------------
-  // BAJADA DE PRECIO
+  // 3. BAJA DE PRECIO — solo usuarios con notifyPriceDrops: true
   // -----------------------------------------------------
   async handlePriceChange(property: Property, oldPrice: number) {
+    // Solo notificamos si el precio BAJÓ
     if ((property.price ?? 0) >= oldPrice) return;
-    const users = await this.usersService.getAllUsers();
+
+    const allUsers = await this.usersService.getAllUsers();
     const imageUrls = property.images?.map((i) => i.url) ?? [];
 
-    const notifications = users.filter((u) => u.email).map((user) =>
-      this.repo.create({
-        user,
-        title: 'Bajo de precio',
-        message: `${property.title} bajo a $${property.price}`,
-      }),
+    // Obtener preferencias para filtrar solo los que quieren notificaciones de precio
+    const prefs = await this.searchPrefService.findAllWithUsers();
+    const prefsByUserId = new Map(prefs.map((p) => [p.user?.id, p]));
+
+    const usersToNotify = allUsers.filter((u) => {
+      if (!u.email) return false;
+      const pref = prefsByUserId.get(u.id);
+      // Si no tiene preferencias guardadas, le notificamos igual (comportamiento global)
+      // Si tiene preferencias, respetamos el flag notifyPriceDrops
+      return !pref || pref.notifyPriceDrops !== false;
+    });
+
+    if (usersToNotify.length === 0) return;
+
+    await this.repo.save(
+      usersToNotify.map((user) =>
+        this.repo.create({
+          user,
+          title: '¡Bajó el precio!',
+          message: `"${property.title}" bajó de $${oldPrice.toLocaleString()} a $${property.price.toLocaleString()}.`,
+          propertyId: property.id,
+        }),
+      ),
     );
-    await this.repo.save(notifications);
 
     try {
       await this.emailService.sendMultipleEmails(
-        users.filter((u) => u.email).map((u) => u.email),
-        'Actualización de precio',
+        usersToNotify.map((u) => u.email),
+        '¡Bajó el precio de una propiedad!',
         EmailTemplates.priceDrop(property.title, property.zone, oldPrice, property.price, imageUrls),
       );
-    } catch (err) {
-      console.error('[ERROR MAIL PRICE] Fallo el envio de baja de precio.');
+    } catch {
+      console.error('[ERROR MAIL PRICE] Falló el envío de baja de precio.');
     }
   }
 
+  // -----------------------------------------------------
+  // 4. CAMBIO DE ESTADO DE SOLICITUD
+  // -----------------------------------------------------
+  async handleRequestStatusChange(request: PropertyRequest) {
+    if (!request.user?.email) return;
+
+    const statusMessages: Record<RequestStatus, { title: string; message: string }> = {
+      [RequestStatus.ENVIADO]:   { title: 'Solicitud recibida',       message: `Tu solicitud para "${request.direccion}, ${request.barrio}" fue recibida correctamente.` },
+      [RequestStatus.REVISION]:  { title: 'Solicitud en revisión',    message: `Un agente está revisando tu solicitud para "${request.direccion}, ${request.barrio}".` },
+      [RequestStatus.ACEPTADO]:  { title: '¡Solicitud aceptada! 🎉',  message: `Tu solicitud para "${request.direccion}, ${request.barrio}" fue aceptada. Un agente se contactará pronto.` },
+      [RequestStatus.RECHAZADO]: { title: 'Solicitud rechazada',      message: `Tu solicitud para "${request.direccion}, ${request.barrio}" no pudo ser procesada en este momento.` },
+    };
+
+    const { title, message } = statusMessages[request.status] ?? {
+      title: 'Actualización de solicitud',
+      message: `El estado de tu solicitud fue actualizado a: ${request.status}.`,
+    };
+
+    await this.repo.save(this.repo.create({
+      user: request.user,
+      title,
+      message,
+    }));
+
+    try {
+      await this.emailService.sendEmail(
+        request.user.email,
+        title,
+        EmailTemplates.requestStatusChange(
+          request.user.name || 'Usuario',
+          request.direccion,
+          request.barrio,
+          request.localidad,
+          request.status,
+          title,
+          message,
+        ),
+      );
+    } catch {
+      console.error(`[ERROR MAIL REQUEST] No se pudo notificar a ${request.user.email}`);
+    }
+  }
+
+  // -----------------------------------------------------
+  // GET para el frontend
+  // -----------------------------------------------------
   async getForUser(userId: number) {
     return this.repo.find({
       where: { user: { id: userId } },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  // -----------------------------------------------------
+  // MARCAR COMO LEÍDA
+  // -----------------------------------------------------
+  async markAsRead(notificationId: number) {
+    await this.repo.update(notificationId, { read: true });
+    return { message: 'Notificación marcada como leída' };
+  }
+
+  // -----------------------------------------------------
+  // MARCAR TODAS COMO LEÍDAS
+  // -----------------------------------------------------
+  async markAllAsRead(userId: number) {
+    await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ read: true })
+      .where('userId = :userId AND read = false', { userId })
+      .execute();
+    return { message: 'Todas las notificaciones marcadas como leídas' };
   }
 }

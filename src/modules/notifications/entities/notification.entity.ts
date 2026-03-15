@@ -21,6 +21,9 @@ export class Notification {
   @Column()
   message: string;
 
+  @Column({ nullable: true })
+  propertyId: number; // Agregamos esto para el enlace del front
+
   @Column({ default: false })
   read: boolean;
 

@@ -5,15 +5,15 @@ import * as dotenv from 'dotenv';
 import { User } from '../modules/users/entities/user.entity';
 import { Property } from '../modules/properties/entities/property.entity';
 import { UserSearchFeedback } from '../modules/requests/entities/request.entity';
-import { Rating } from 'src/modules/ratings/entities/rating.entity';
-import { Comment } from 'src/modules/comments/entities/comment.entity';
-import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
-import { SearchPreference } from 'src/modules/search-preferences/entities/search-preference.entity';
-import { Notification } from 'src/modules/notifications/entities/notification.entity';
-import { PropertyType } from 'src/modules/typeOfProperty/entities/typeOfProperty.entity';
-import { PropertyImages } from 'src/modules/ImagesProperty/entities/ImagesPropertyEntity';
-import { Stat } from 'src/modules/stats/entities/stat.entity';
-import { PropertyRequest } from 'src/modules/PropertyRequest/entities/PropertyRequest';
+import { Rating } from '../modules/ratings/entities/rating.entity';
+import { Comment } from '../modules/comments/entities/comment.entity';
+import { Favorite } from '../modules/favorites/entities/favorite.entity';
+import { SearchPreference } from '../modules/search-preferences/entities/search-preference.entity';
+import { Notification } from '../modules/notifications/entities/notification.entity';
+import { PropertyType } from '../modules/typeOfProperty/entities/typeOfProperty.entity';
+import { PropertyImages } from '../modules/ImagesProperty/entities/ImagesPropertyEntity';
+import { Stat } from '../modules/stats/entities/stat.entity';
+import { PropertyRequest } from '../modules/PropertyRequest/entities/PropertyRequest';
 // Importa más entidades según necesites
 
 dotenv.config(); 

@@ -9,10 +9,10 @@ import {
 } from '@nestjs/common';
 import { UserSearchFeedbackService } from './requests.service';
 import { CreateUserSearchFeedbackDto } from './dto/create-request.dto';
-import { Roles } from 'src/common/decorators/roles.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
 import { AuthGuard } from '@nestjs/passport';
-import { RolesGuard } from 'src/common/guards/roles.guard'; // Asegúrate de tener este guard
+import { RolesGuard } from '../../common/guards/roles.guard'; // Asegúrate de tener este guard
 
 @Controller('feedback/search')
 export class UserSearchFeedbackController {

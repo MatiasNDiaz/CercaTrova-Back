@@ -58,6 +58,12 @@ export class SearchPreference {
   m2: number;
 
   @Column({ nullable: true })
+  garage: boolean;
+
+  @Column({ nullable: true })
+  patio: boolean;
+  
+  @Column({ nullable: true })
   maxAntiquity: number;
 
   @Column({ default: true })

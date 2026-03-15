@@ -2,74 +2,68 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
 import { UserSearchFeedback } from '../../requests/entities/request.entity';
-import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
-import { Rating } from 'src/modules/ratings/entities/rating.entity';
-import { SearchPreference } from 'src/modules/search-preferences/entities/search-preference.entity';
-import { Comment } from 'src/modules/comments/entities/comment.entity';
-import { Notification } from 'src/modules/notifications/entities/notification.entity';
+import { Favorite } from '../../favorites/entities/favorite.entity';
+import { Rating } from '../../ratings/entities/rating.entity';
+import { SearchPreference } from '../../search-preferences/entities/search-preference.entity';
+import { Comment } from '../../comments/entities/comment.entity';
+import { Notification } from '../../notifications/entities/notification.entity';
 import { Role } from '../enums/role.enum';
 
 @Entity('users')
 export class User {
-    @PrimaryGeneratedColumn()
-    id: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-    @Column()
-    name: string;
+  @Column()
+  name: string;
 
-    @Column({ nullable: true })
-    surname: string; 
+  @Column({ nullable: true })
+  surname: string;
 
-    @Column({ nullable: true })
-    phone: string;
+  @Column({ nullable: true })
+  phone: string;
 
-    @Column({ nullable: true })
-    photo?: string;
+  @Column({ nullable: true })
+  photo?: string;
 
-    @Column({ unique: true })
-    email: string;
+  @Column({ unique: true })
+  email: string;
 
-    @Column({ nullable: true }) // Google login puede no tener password
-    password?: string;
+  @Column({ nullable: true })
+  password?: string;
 
-    @Column({ default: false })
-    profileIncomplete: boolean;
+  @Column({ default: false })
+  profileIncomplete: boolean;
 
-    @Column({
-    type: 'enum',
-    enum: Role,
-    default: Role.USER,
-    })
-    role: Role;
+  @Column({ type: 'enum', enum: Role, default: Role.USER })
+  role: Role;
 
-    // @Column({ nullable: true, select: false })
-    // refreshToken?: string | null; // hashed refresh token - select: false para que no venga por defecto en queries
+  @CreateDateColumn()
+  createdAt: Date;
 
-    @CreateDateColumn()
-    createdAt: Date;
+  @UpdateDateColumn()
+  updatedAt: Date;
 
-    @UpdateDateColumn()
-    updatedAt: Date;
+  // ── Relaciones con CASCADE DELETE ─────────────────────────────────────────
 
-    // Relaciones
-    @OneToMany(() => Property, property => property.agent)
-    properties: Property[];
+  @OneToMany(() => Property, property => property.agent)
+  properties: Property[];
 
-    @OneToMany(() => Rating, rating => rating.user)
-    ratings: Rating[];
+  @OneToMany(() => Rating, rating => rating.user, { cascade: true, onDelete: 'CASCADE' } as any)
+  ratings: Rating[];
 
-    @OneToMany(() => Comment, comment => comment.user)
-    comments: Comment[];
+  @OneToMany(() => Comment, comment => comment.user, { cascade: true, onDelete: 'CASCADE' } as any)
+  comments: Comment[];
 
-    @OneToMany(() => SearchPreference, sp => sp.user)
-    searchPreferences: SearchPreference[];
+  @OneToMany(() => SearchPreference, sp => sp.user, { cascade: true, onDelete: 'CASCADE' } as any)
+  searchPreferences: SearchPreference[];
 
-    @OneToMany(() => Notification, notification => notification.user)
-    notifications: Notification[];
+  @OneToMany(() => Notification, notification => notification.user, { cascade: true, onDelete: 'CASCADE' } as any)
+  notifications: Notification[];
 
-    // @OneToMany(() => Request, request => request.)
-    // requests: Request[];
+  @OneToMany(() => Favorite, favorite => favorite.user, { cascade: true, onDelete: 'CASCADE' } as any)
+  favorites: Favorite[];
 
-    @OneToMany(() => Favorite, favorite => favorite.user)
-    favorites: Favorite[];
+//   @OneToMany(() => UserSearchFeedback, feedback => feedback.user, { cascade: true, onDelete: 'CASCADE' } as any)
+//   feedbacks: UserSearchFeedback[];
 }

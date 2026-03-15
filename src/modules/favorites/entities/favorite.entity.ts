@@ -10,8 +10,11 @@ export class Favorite {
   @PrimaryColumn()
   property_id: number;
 
-  @ManyToOne(() => User, user => user.favorites)
-  user: User;
+ 
+  @ManyToOne(() => User, user => user.favorites, {
+  onDelete: 'CASCADE',
+})
+user: User;
 
   @ManyToOne(() => Property, property => property.favorites)
   property: Property;
