@@ -7,6 +7,8 @@ import {
 } from 'typeorm';
 import { User } from 'src/modules/users/entities/user.entity';
 
+export type NotificationTargetRole = 'user' | 'admin';
+
 @Entity('notifications')
 export class Notification {
   @PrimaryGeneratedColumn()
@@ -22,10 +24,15 @@ export class Notification {
   message: string;
 
   @Column({ nullable: true })
-  propertyId: number; // Agregamos esto para el enlace del front
+  propertyId: number;
 
   @Column({ default: false })
   read: boolean;
+
+  // 'user'  → notificación para usuarios normales
+  // 'admin' → notificación para administradores
+  @Column({ type: 'varchar', default: 'user' })
+  targetRole: NotificationTargetRole;
 
   @CreateDateColumn()
   createdAt: Date;

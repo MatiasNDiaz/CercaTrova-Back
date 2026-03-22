@@ -24,12 +24,7 @@ export class NotificationService {
   // -----------------------------------------------------
   private priceMatches(propertyPrice: number, preferredPrice?: number): boolean {
     if (!preferredPrice || !propertyPrice) return false;
-    let tolerancePercent = 6;
-    if (preferredPrice >= 50000 && preferredPrice < 150000) tolerancePercent = 7;
-    if (preferredPrice >= 150000) tolerancePercent = 5;
-    const min = preferredPrice * (1 - tolerancePercent / 100);
-    const max = preferredPrice * (1 + tolerancePercent / 100);
-    return propertyPrice >= min && propertyPrice <= max;
+    return propertyPrice <= preferredPrice;
   }
 
   private m2Matches(propM2: number, prefM2: number): boolean {

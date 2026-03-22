@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Get, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, UseGuards, Req, Param } from '@nestjs/common';
 import { SearchPreferencesService } from './search-preferences.service';
 import { CreateSearchPreferenceDto } from './dto/create-search-preference.dto';
 import { UpdateSearchPreferenceDto } from './dto/update-search-preference.dto';
@@ -29,4 +29,10 @@ export class SearchPreferencesController {
     const userId = req.user.id;
     return this.service.getByUser(userId);
   }
+
+  @Roles(Role.ADMIN)
+@Get('user/:id')
+getByUserId(@Param('id') id: string) {
+  return this.service.getByUser(Number(id));
+}
 }
