@@ -42,7 +42,7 @@ npx jest path/to/file.spec.ts
 npm run test:e2e
 ```
 
-There are currently no `*.spec.ts` files in `src/` — the Jest unit-test setup exists but is unused. `test/app.e2e-spec.ts` is the only test present.
+Unit/integration tests live under `src/common/guards/*.spec.ts` (guards + authorization; run with `npm run test`, no DB needed). Jest maps `src/...` imports via `moduleNameMapper`. When touching guards, auth flows, or route protection, run these tests — they exist specifically to catch missing/decorative guards.
 
 ## Environment
 

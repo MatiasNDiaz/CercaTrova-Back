@@ -40,6 +40,19 @@ export class PropertyRequestService {
       })
       .catch((err) => console.error('[NOTIF ADMIN] Error en solicitud:', err));
 
+    // (F3): notificar también al usuario "tu solicitud fue recibida" — el
+    // template del estado ENVIADO existía pero nunca se disparaba al crear.
+    // handleRequestStatusChange necesita request.user cargado; reusamos el
+    // usuario ya buscado más arriba.
+    if (user) {
+      saved.user = user;
+      this.notificationService
+        .handleRequestStatusChange(saved)
+        .catch((err) =>
+          console.error('[NOTIF USER] Error notificando solicitud recibida:', err),
+        );
+    }
+
     return saved;
   }
 

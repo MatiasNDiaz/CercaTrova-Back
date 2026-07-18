@@ -14,6 +14,7 @@ import { PropertyType } from '../modules/typeOfProperty/entities/typeOfProperty.
 import { PropertyImages } from '../modules/ImagesProperty/entities/ImagesPropertyEntity';
 import { Stat } from '../modules/stats/entities/stat.entity';
 import { PropertyRequest } from '../modules/PropertyRequest/entities/PropertyRequest';
+import { FailedEmail } from '../modules/notifications/email/entities/failed-email.entity';
 // Importa más entidades según necesites
 
 dotenv.config(); 
@@ -25,7 +26,7 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat],
+    entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat, FailedEmail],
     // 🔒 SEGURIDAD (M10): synchronize NUNCA en producción — puede dropear
     // columnas con datos reales al renombrar entidades. Antes de deployar
     // a producción hay que generar migrations de TypeORM (ver

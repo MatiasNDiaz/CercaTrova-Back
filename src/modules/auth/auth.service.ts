@@ -82,7 +82,10 @@ export class AuthService {
         phone: '',
         // El rol NO se pasa: la entidad lo asigna por default (Role.USER)
       };
-      user = await this.userService.createUser(partialUser);
+      // (F8): los usuarios creados vía Google arrancan sin teléfono ni
+      // contraseña local → profileIncomplete = true (el frontend debe
+      // guiarlos a completar el perfil)
+      user = await this.userService.createUser(partialUser, true);
       // Los defaults de la entidad los aplica la DB, pero save() no los
       // devuelve: los fijamos para que el payload del JWT y la respuesta
       // tengan los valores reales

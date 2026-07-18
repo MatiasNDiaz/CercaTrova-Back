@@ -12,6 +12,7 @@ import { imageUploadOptions } from 'src/common/multer/image-upload.options';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // Ajustá la ruta según tu proyecto
 import { RolesGuard } from 'src/common/guards/roles.guard'; // Ajustá la ruta
 import { Roles } from 'src/common/decorators/roles.decorator'; // Ajustá la ruta
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from './enums/role.enum';
 
 @Controller('users')
@@ -56,7 +57,19 @@ export class UsersController {
     return this.usersService.getUserById(Number(id));
   }
 
-  // 5. Actualizar Datos: Solo el dueño de la cuenta o Admin
+  // 5.a (F7). Perfil propio: el id sale SIEMPRE del token — sin param de
+  // URL no hay superficie de IDOR. Declarada antes que ':id' para que
+  // 'me' no matchee como id.
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  async updateOwnProfile(
+    @GetUser('id') userId: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ): Promise<User> {
+    return this.usersService.updateUser(userId, updateUserDto);
+  }
+
+  // 5.b Actualizar Datos: Solo el dueño de la cuenta o Admin
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   async updateUser(

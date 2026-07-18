@@ -37,7 +37,10 @@ export class UsersService {
 
 
   // Crear usuario
-  async createUser(createUserDto: CreateUserDto): Promise<User> {
+  // (F8): `profileIncomplete` es un parámetro interno (NO viene del DTO
+  // público) — solo el alta vía Google lo pasa en true, porque esos
+  // usuarios arrancan sin teléfono ni contraseña local.
+  async createUser(createUserDto: CreateUserDto, profileIncomplete = false): Promise<User> {
     try {
       // Verificación: email único
       const existing = await this.userRepository.findOne({
@@ -56,7 +59,10 @@ export class UsersService {
         createUserDto.password = await bcrypt.hash(createUserDto.password, 10);
       }
 
-      const user: User = this.userRepository.create(createUserDto);
+      const user: User = this.userRepository.create({
+        ...createUserDto,
+        profileIncomplete,
+      });
       const saved = await this.userRepository.save(user);
 
       // 🔒 SEGURIDAD (C2): nunca devolver el password (ni hasheado) al caller
@@ -107,6 +113,13 @@ export class UsersService {
 
     // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
     Object.assign(user, updateUserDto);
+
+    // (F8): si un usuario de Google completa su perfil (define contraseña
+    // local y tiene teléfono), se limpia el flag
+    if (user.profileIncomplete && updateUserDto.password && user.phone) {
+      user.profileIncomplete = false;
+    }
+
     return await this.userRepository.save(user);
   }
 

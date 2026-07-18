@@ -3,10 +3,16 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { BootstrapService } from './common/bootstraps/bootstrap.service';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
+  // 🔒 SEGURIDAD (F9): headers de seguridad estándar (X-Content-Type-Options,
+  // X-Frame-Options, HSTS, etc.). CSP deshabilitada por ahora: es una API
+  // JSON consumida por un frontend aparte y una CSP estricta no aporta acá.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
   // 🔒 SEGURIDAD (M11): el origin sale de FRONTEND_URL (admite varios,
   // separados por coma); fallback a localhost:3001 solo para desarrollo
   app.enableCors({
