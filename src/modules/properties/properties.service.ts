@@ -110,29 +110,22 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
   const property = this.propertyRepo.create(dto);
   await this.propertyRepo.save(property);
 
-  // 2) Si no hay imágenes, recargar y devolvemos inmediatamente
-  if (!images || images.length === 0) {
-    const minimal = await this.propertyRepo.findOne({
-      where: { id: property.id },
-      relations: ['typeOfProperty', 'images', 'agent']
-    });
-    return {
-      ...property,
-      images: minimal?.images ?? []
-    };
+  // 2) Subir y guardar imágenes si las hay (delegado)
+  // 🔔 (M7): antes había un return temprano cuando no venían imágenes que
+  // salteaba el disparo de notificaciones — ahora se notifica SIEMPRE
+  let savedImages: PropertyImages[] = [];
+  if (images && images.length > 0) {
+    savedImages = await this.propertyImagesService.createMany(property, images);
+    property.images = savedImages;
   }
 
-  // 3) Subir y guardar imágenes (delegado)
-  const savedImages = await this.propertyImagesService.createMany(property, images);
-  property.images = savedImages;
-
-  // 4) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
+  // 3) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
   const fullProperty = await this.propertyRepo.findOne({
     where: { id: property.id },
     relations: [
       'typeOfProperty',
       'images',
-      'agent',           
+      'agent',
       'referredBy'
     ],
   });
@@ -141,12 +134,12 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
     throw new NotFoundException('Error interno: no se pudo recargar la propiedad');
   }
 
-  // 5) Disparar notificaciones en background
+  // 4) Disparar notificaciones en background (tenga o no imágenes)
   this.notificationService.handleNewProperty(fullProperty).catch(err => {
     console.error('Error enviando notificaciones para propiedad recién creada:', err);
   });
 
-  // 6) Devolver la representación del recurso creada
+  // 5) Devolver la representación del recurso creada
   return {
     ...property,
     images: savedImages.map(img => ({

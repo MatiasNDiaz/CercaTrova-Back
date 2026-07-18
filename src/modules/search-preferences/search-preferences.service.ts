@@ -27,8 +27,9 @@ export class SearchPreferencesService {
   }
 
   async create(userId: number, dto: CreateSearchPreferenceDto) {
+    // (B2): excepción HTTP real en vez de Error genérico (evita 500)
     const user = await this.usersService.getUserById(userId);
-    if (!user) throw new Error('Usuario no encontrado');
+    if (!user) throw new NotFoundException('Usuario no encontrado');
 
     // Aplicar trim a los campos de texto
   if (dto.localidad) dto.localidad = dto.localidad.trim();

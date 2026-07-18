@@ -29,7 +29,10 @@ export class User {
   @Column({ unique: true })
   email: string;
 
-  @Column({ nullable: true })
+  // 🔒 SEGURIDAD (C8): select:false — el password NUNCA se carga en las
+  // queries por defecto. Solo el login lo carga explícitamente vía
+  // UsersService.findUserByEmailWithPassword().
+  @Column({ nullable: true, select: false })
   password?: string;
 
   @Column({ default: false })
@@ -37,6 +40,18 @@ export class User {
 
   @Column({ type: 'enum', enum: Role, default: Role.USER })
   role: Role;
+
+  // 📧 (M8): opt-out de emails masivos (broadcast de nuevas propiedades y
+  // bajas de precio). Las notificaciones in-app no se ven afectadas.
+  @Column({ default: true })
+  notifyBroadcast: boolean;
+
+  // 🔒 SEGURIDAD (punto 15): versión de token para revocación de sesión.
+  // Viaja en el payload del JWT y se compara contra la DB en cada request;
+  // logout y cambio de password la incrementan, invalidando al instante
+  // todos los tokens emitidos antes.
+  @Column({ default: 0 })
+  tokenVersion: number;
 
   @CreateDateColumn()
   createdAt: Date;

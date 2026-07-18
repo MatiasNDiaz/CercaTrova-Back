@@ -17,9 +17,10 @@ export class NotificationController {
   }
 
   // PATCH /notifications/:id/read — marcar una como leída
+  // 🔒 SEGURIDAD (M6): se pasa el usuario del token para validar ownership
   @Patch(':id/read')
-  markAsRead(@Param('id') id: number) {
-    return this.service.markAsRead(+id);
+  markAsRead(@Param('id') id: number, @Req() req) {
+    return this.service.markAsRead(+id, req.user.id, req.user.role);
   }
 
   // PATCH /notifications/read-all — marcar todas como leídas

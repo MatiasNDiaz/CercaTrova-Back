@@ -5,11 +5,19 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class EmailService {
+  private readonly from: string;
+
   constructor(private config: ConfigService) {
+    // 🔒 SEGURIDAD (C9): nunca loguear la API key
+    sgMail.setApiKey(this.config.get<string>('SENDGRID_API_KEY')!);
 
-  console.log("API KEY LEÍDA:", this.config.get('SENDGRID_API_KEY'));
-  sgMail.setApiKey(this.config.get<string>('SENDGRID_API_KEY')!); 
-
+    // (B6): el remitente sale del .env — sin fallback hardcodeado.
+    // Debe ser un remitente verificado en SendGrid (Gmail falla DMARC).
+    const from = this.config.get<string>('EMAIL_FROM');
+    if (!from) {
+      throw new Error('EMAIL_FROM no está definido en el .env — abortando el arranque');
+    }
+    this.from = from;
   }
 
 async sendEmail(to: string, subject: string, html: string) {
@@ -17,7 +25,7 @@ async sendEmail(to: string, subject: string, html: string) {
     console.log(`[MAIL] Intentando enviar a: ${to}, subject: ${subject}`); // 👈
     const msg = {
       to,
-      from: 'matidiazargentino21@gmail.com',
+      from: this.from,
       subject,
       html,
     };

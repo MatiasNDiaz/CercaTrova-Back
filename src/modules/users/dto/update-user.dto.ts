@@ -25,7 +25,13 @@ export class UpdateUserDto {
   @IsString()
   password?: string;
 
+  // 📧 (M8): opt-out de emails masivos — editable por el propio usuario
+  // vía PATCH /users/:id (futuro toggle en el perfil)
   @IsOptional()
   @IsBoolean()
-  isAdmin?: boolean;
+  notifyBroadcast?: boolean;
+
+  // 🔒 SEGURIDAD (B7): el campo isAdmin fue eliminado — no existía en la
+  // entidad y era una mina de escalada de privilegios futura. El rol jamás
+  // debe ser editable desde este DTO.
 }

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntPipe, Req } from '@nestjs/common';
 import { RatingsService } from './ratings.service';
+import { CreateRatingDto } from './dto/create-rating.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
@@ -11,13 +12,13 @@ export class RatingsController {
   @UseGuards(JwtAuthGuard)
   @Roles(Role.USER)
   @Post(':propertyId')
-  async rate( 
+  async rate(
     @Param('propertyId', ParseIntPipe) propertyId: number,
-    @Body('score') score: number,
+    @Body() dto: CreateRatingDto,
     @Req() req
   ) {
     const userId = req.user.id;
-    return this.ratingsService.rateProperty(userId, propertyId, score);
+    return this.ratingsService.rateProperty(userId, propertyId, dto.score);
   }
 
   @Get(':propertyId')

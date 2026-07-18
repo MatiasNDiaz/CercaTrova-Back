@@ -5,6 +5,7 @@ import { UpdateSearchPreferenceDto } from './dto/update-search-preference.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Role } from '../users/enums/role.enum';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('search-preferences')
@@ -30,9 +31,12 @@ export class SearchPreferencesController {
     return this.service.getByUser(userId);
   }
 
+  // 🔒 SEGURIDAD (C6): sin RolesGuard, el @Roles(ADMIN) era decorativo y
+  // cualquier logueado leía las preferencias (datos personales) de otros
   @Roles(Role.ADMIN)
-@Get('user/:id')
-getByUserId(@Param('id') id: string) {
-  return this.service.getByUser(Number(id));
-}
+  @UseGuards(RolesGuard)
+  @Get('user/:id')
+  getByUserId(@Param('id') id: string) {
+    return this.service.getByUser(Number(id));
+  }
 }

@@ -26,7 +26,10 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
     entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat],
-   // ⚠️ Solo en desarrollo, ¡cambia a false en Producción!
-    synchronize: true, 
+    // 🔒 SEGURIDAD (M10): synchronize NUNCA en producción — puede dropear
+    // columnas con datos reales al renombrar entidades. Antes de deployar
+    // a producción hay que generar migrations de TypeORM (ver
+    // SECURITY_FIXES_2.md) y correr con NODE_ENV=production.
+    synchronize: process.env.NODE_ENV !== 'production',
 // dropSchema: true, // Descomenta esta línea si quieres que se borren las tablas y se vuelvan a crear (útil en desarrollo)
 };

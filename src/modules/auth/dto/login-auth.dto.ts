@@ -1,18 +1,15 @@
-// src/modules/users/dto/create-user.dto.ts
-import { IsString, IsEmail, IsOptional, IsBoolean, IsDate, IsNumber, MinLength } from 'class-validator';
+// src/modules/auth/dto/login-auth.dto.ts
+import { IsString, IsEmail, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
+// (B8): se eliminó el campo `id` (el cliente no debe poder mandarlo) y se
+// unificó MinLength(5) con RegisterDto (antes login aceptaba 4)
 export class LoginDto {
+  @Transform(({ value }) => value?.trim().toLowerCase())
+  @IsEmail()
+  email: string;
 
-    @IsOptional() // Se genera automáticamente en la DB
-    @IsNumber()
-    id?: number;
-
-    @Transform(({ value }) => value.trim().toLowerCase())
-    @IsEmail()
-    email: string;
-
-    @IsString()
-    @MinLength(4)
-    password: string;
+  @IsString()
+  @MinLength(5)
+  password: string;
 }

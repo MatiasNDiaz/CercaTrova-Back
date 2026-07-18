@@ -8,6 +8,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { imageUploadOptions } from 'src/common/multer/image-upload.options';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // Ajustá la ruta según tu proyecto
 import { RolesGuard } from 'src/common/guards/roles.guard'; // Ajustá la ruta
 import { Roles } from 'src/common/decorators/roles.decorator'; // Ajustá la ruta
@@ -26,7 +27,8 @@ export class UsersController {
   // 2. Subir Foto: Solo usuarios logueados
   @Patch(':id/photo')
   @UseGuards(JwtAuthGuard) 
-  @UseInterceptors(FileInterceptor('file'))
+  // 🔒 SEGURIDAD (M12): solo imágenes, máx. 5 MB
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
   async uploadPhoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,

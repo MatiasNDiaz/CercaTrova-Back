@@ -44,12 +44,24 @@ export class UsersService {
         where: { email: createUserDto.email },
       });
 
+      // 🔒 SEGURIDAD (B1): mensaje genérico — no revelar si el email existe
       if (existing) {
-        throw new BadRequestException('El email ya está registrado');
+        throw new BadRequestException('No se pudo completar el registro. Verificá los datos ingresados.');
+      }
+
+      // 🔒 SEGURIDAD (C2): el hash de bcrypt vive acá — única fuente de verdad.
+      // No se hashea el string vacío: los usuarios de Google se crean con
+      // password '' y esa marca se usa en el login para detectarlos.
+      if (createUserDto.password) {
+        createUserDto.password = await bcrypt.hash(createUserDto.password, 10);
       }
 
       const user: User = this.userRepository.create(createUserDto);
-      return await this.userRepository.save(user);
+      const saved = await this.userRepository.save(user);
+
+      // 🔒 SEGURIDAD (C2): nunca devolver el password (ni hasheado) al caller
+      delete saved.password;
+      return saved;
 
     } catch (error) {
       throw new BadRequestException(
@@ -88,6 +100,9 @@ export class UsersService {
 // 🔒 SEGURIDAD: Si viene password en el Body, la hasheamos antes de pisar el objeto
     if (updateUserDto.password) {
       updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+      // 🔒 SEGURIDAD (punto 15): cambiar el password revoca todas las
+      // sesiones activas del usuario
+      user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     }
 
     // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
@@ -114,9 +129,25 @@ async deleteUser(id: number): Promise<void> {
   }
 }
 
-  // Buscar usuario por email
+  // Buscar usuario por email (sin password, por el select:false de la entidad)
   async findUserByEmail(email: string): Promise<User | null> {
     return await this.userRepository.findOneBy({ email });
+  }
+
+  // 🔒 SEGURIDAD (C8): el password tiene select:false en la entidad; este
+  // método lo carga explícitamente y SOLO debe usarse para validar el login.
+  async findUserByEmailWithPassword(email: string): Promise<User | null> {
+    return await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .where('user.email = :email', { email })
+      .getOne();
+  }
+
+  // 🔒 SEGURIDAD (punto 15): incrementa tokenVersion e invalida al instante
+  // todos los JWT emitidos hasta ahora para este usuario (logout real)
+  async incrementTokenVersion(userId: number): Promise<void> {
+    await this.userRepository.increment({ id: userId }, 'tokenVersion', 1);
   }
 
   // ✔ NUEVO: Verifica si un usuario puede recibir notificaciones

@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
 import { UsersService } from '../users/users.service';
+import { Role } from '../users/enums/role.enum';
 import { SearchPreferencesService } from '../search-preferences/search-preferences.service';
 import { Property } from '../properties/entities/property.entity';
 import { EmailService } from './email/email.service';
@@ -154,9 +155,14 @@ export class NotificationService {
       ),
     );
 
+    // 📧 (M8): el email masivo respeta el opt-out notifyBroadcast;
+    // la notificación in-app (campanita) se guarda igual para todos
+    const emailRecipients = usersToNotify.filter((u) => u.notifyBroadcast !== false);
+    if (emailRecipients.length === 0) return;
+
     try {
       await this.emailService.sendMultipleEmails(
-        usersToNotify.map((u) => u.email),
+        emailRecipients.map((u) => u.email),
         'Nueva propiedad publicada en CercaTrova',
         EmailTemplates.newProperty(
           property.title,
@@ -202,9 +208,14 @@ export class NotificationService {
       ),
     );
 
+    // 📧 (M8): el email masivo respeta el opt-out notifyBroadcast;
+    // la notificación in-app (campanita) se guarda igual para todos
+    const emailRecipients = usersToNotify.filter((u) => u.notifyBroadcast !== false);
+    if (emailRecipients.length === 0) return;
+
     try {
       await this.emailService.sendMultipleEmails(
-        usersToNotify.map((u) => u.email),
+        emailRecipients.map((u) => u.email),
         '¡Bajó el precio de una propiedad!',
         EmailTemplates.priceDrop(property.title, property.zone, oldPrice, property.price, imageUrls),
       );
@@ -269,8 +280,26 @@ export class NotificationService {
   // -----------------------------------------------------
   // MARCAR COMO LEÍDA
   // -----------------------------------------------------
-  async markAsRead(notificationId: number) {
-    await this.repo.update(notificationId, { read: true });
+  // 🔒 SEGURIDAD (M6): solo el dueño puede marcar su notificación como leída.
+  // El admin puede además marcar las notificaciones dirigidas a admins
+  // (targetRole = 'admin'), que no tienen un usuario dueño.
+  async markAsRead(notificationId: number, userId: number, role: Role) {
+    const qb = this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ read: true })
+      .where('id = :id', { id: notificationId });
+
+    if (role === Role.ADMIN) {
+      qb.andWhere('("userId" = :userId OR "targetRole" = \'admin\')', { userId });
+    } else {
+      qb.andWhere('"userId" = :userId', { userId });
+    }
+
+    const result = await qb.execute();
+    if (!result.affected) {
+      throw new NotFoundException('Notificación no encontrada');
+    }
     return { message: 'Notificación marcada como leída' };
   }
 

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { UsersModule } from './modules/users/users.module';
 import { PropertiesModule } from './modules/properties/properties.module';
 import { RequestsModule } from './modules/requests/requests.module';
@@ -37,6 +39,13 @@ import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest
     // ----------------------------------------------------------------------
     TypeOrmModule.forRoot(typeOrmConfig),
       TypeOrmModule.forFeature([User]),
+
+    // 🔒 SEGURIDAD (M9): rate limiting global — 100 requests/min por IP.
+    // Las rutas de auth tienen un límite estricto propio (5/min) vía
+    // @Throttle en auth.controller.ts.
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+    }),
     // 📝 FUNCIÓN: Establece la conexión principal a la Base de Datos.
     // 'forRoot' inicializa TypeORM con la configuración de conexión
     // (credenciales, tipo de DB, etc.) definida en 'typeOrmConfig'.
@@ -60,7 +69,11 @@ import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest
     SearchPreferencesModule,
     PropertyRequestModule,
   ],
-  providers: [BootstrapService],
+  providers: [
+    BootstrapService,
+    // 🔒 SEGURIDAD (M9): aplica el rate limiting a TODA la app
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,
   // y rara vez tiene 'exports'.
 })

@@ -1,12 +1,10 @@
-// src/modules/users/dto/create-user.dto.ts
-import { IsString, IsEmail, IsOptional, IsBoolean, IsDate, IsNumber, MinLength } from 'class-validator';
+// src/modules/auth/dto/register-auth.dto.ts
+import { IsString, IsEmail, IsOptional, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
+// (B8): se eliminaron `id`, `createdAt` y `updatedAt` — los genera la DB y
+// el cliente no debe poder mandarlos
 export class RegisterDto {
-  @IsOptional() // Se genera automáticamente en la DB
-  @IsNumber()
-  id?: number;
-
   @IsString()
   name: string;
 
@@ -27,12 +25,4 @@ export class RegisterDto {
   @IsString()
   @MinLength(5)
   password: string;
-
-  @IsOptional()
-  @IsDate()
-  createdAt?: Date;
-
-  @IsOptional()
-  @IsDate()
-  updatedAt?: Date;
 }

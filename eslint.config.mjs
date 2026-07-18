@@ -29,13 +29,9 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      // (B4): la regla vive acá adentro — antes había un bloque
+      // "prettier/prettier" suelto fuera del objeto que rompía el config
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
-  "prettier/prettier": [
-    "error",
-    {
-      "endOfLine" : "auto"
-    }
-  ]
 );

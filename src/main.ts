@@ -7,8 +7,10 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
+  // 🔒 SEGURIDAD (M11): el origin sale de FRONTEND_URL (admite varios,
+  // separados por coma); fallback a localhost:3001 solo para desarrollo
   app.enableCors({
-    origin: 'http://localhost:3001', // Tu frontend
+    origin: process.env.FRONTEND_URL?.split(',').map((o) => o.trim()) ?? 'http://localhost:3001',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true, // Importante para que funcionen las cookies/sesiones
   });

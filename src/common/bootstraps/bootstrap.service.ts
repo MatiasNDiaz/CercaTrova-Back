@@ -34,6 +34,15 @@ export class BootstrapService {
       return;
     }
 
+    // 🔒 SEGURIDAD (B3): no crear jamás un admin con password débil —
+    // se aborta el arranque con un mensaje claro
+    if (password.length < 12) {
+      throw new Error(
+        'ADMIN_PASSWORD debe tener al menos 12 caracteres — abortando el arranque. ' +
+        'Definí un password fuerte en el .env antes de iniciar la app.',
+      );
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const admin = this.userRepo.create({
       name,
@@ -45,7 +54,7 @@ export class BootstrapService {
     });
 
     await this.userRepo.save(admin);
+    // 🔒 SEGURIDAD (C9): jamás loguear el password del admin
     this.logger.log(`🟢 Admin creado: ${email}`);
-    this.logger.log(`🟢 Admin creado: ${password}`);
   }
 }

@@ -25,10 +25,16 @@ import { NotificationModule } from '../notifications/notifications.module';
 
       // 'useFactory' es la función que se ejecuta para crear la configuración del módulo.
       useFactory: async (configService: ConfigService) => {
-        return { 
-          // 🔑 Clave Secreta: Obtenida del ConfigService (lee el .env). 
+        // 🔒 SEGURIDAD (C9): sin JWT_SECRET la app NO debe arrancar.
+        // Un fallback público permitiría a cualquiera forjar tokens ADMIN.
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET no está definido en el .env — abortando el arranque');
+        }
+        return {
+          // 🔑 Clave Secreta: Obtenida del ConfigService (lee el .env).
           // Es vital para firmar tokens y asegurar que solo nuestro backend pueda verificarlos.
-          secret: configService.get<string>('JWT_SECRET') || 'FALLBACK_SECRET',
+          secret,
           signOptions:{ 
             // Tiempo de Expiración: También del .env. 
             // Define por cuánto tiempo el token será válido.

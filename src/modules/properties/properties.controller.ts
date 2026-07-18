@@ -11,8 +11,9 @@ import {
   Query,
   UseInterceptors,
   UploadedFiles,
-  BadRequestException,
 } from '@nestjs/common';
+import { JsonToDtoPipe } from 'src/common/pipes/json-to-dto.pipe';
+import { imageUploadOptions } from 'src/common/multer/image-upload.options';
 import { PropertiesService } from './properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
@@ -53,39 +54,27 @@ export class PropertiesController {
 
 
   // Crear propiedad + imágenes
+  // 🔒 SEGURIDAD (M4): el campo 'data' pasa por JsonToDtoPipe — el DTO se
+  // valida con class-validator en vez del JSON.parse() manual sin control
   @Roles(Role.ADMIN)
   @Post()
-  @UseInterceptors(FilesInterceptor('images', 10))
+  @UseInterceptors(FilesInterceptor('images', 10, imageUploadOptions))
   async create(
-    @Body('data') rawData: string,
+    @Body('data', new JsonToDtoPipe(CreatePropertyDto)) dto: CreatePropertyDto,
     @UploadedFiles() images: MulterFile[],
   ) {
-    let dto: CreatePropertyDto;
-    try {
-      dto = JSON.parse(rawData);
-    } catch {
-      throw new BadRequestException("El campo 'data' debe ser JSON válido");
-    }
-
     return this.propertiesService.createWithImages(dto, images);
   }
 
   // PATCH: actualizar campos de property, borrar imágenes y subir nuevas (delegado)
   @Roles(Role.ADMIN)
   @Patch(':id')
-  @UseInterceptors(FilesInterceptor('newImages', 10))
+  @UseInterceptors(FilesInterceptor('newImages', 10, imageUploadOptions))
   async update(
     @Param('id') id: string,
-    @Body('data') rawData: string,
+    @Body('data', new JsonToDtoPipe(UpdatePropertyDto)) dto: UpdatePropertyDto,
     @UploadedFiles() newImages: MulterFile[],
   ) {
-    let dto: UpdatePropertyDto;
-    try {
-      dto = JSON.parse(rawData);
-    } catch {
-      throw new BadRequestException("El campo 'data' debe ser un JSON válido");
-    }
-
     return this.propertiesService.update(
       +id,
       dto,

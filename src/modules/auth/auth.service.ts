@@ -18,12 +18,12 @@ export class AuthService {
   ) {}
 
   async register(registerData: CreateUserDto) {
+    // 🔒 SEGURIDAD (B1): mensaje genérico — no revelar si el email existe
     const userExist = await this.userService.findUserByEmail(registerData.email);
-    if (userExist) throw new BadRequestException('Usuario ya existente');
+    if (userExist) throw new BadRequestException('No se pudo completar el registro. Verificá los datos ingresados.');
 
-    const hashedPassword = await bcrypt.hash(registerData.password, 10);
-    registerData.password = hashedPassword;
-
+    // 🔒 SEGURIDAD (C2): el hash lo hace UsersService.createUser() (única
+    // fuente de verdad). Hashear acá también produciría un doble hash.
     const createdUser = await this.userService.createUser(registerData);
 
     // 👇 ahora pasa el id también
@@ -40,19 +40,26 @@ export class AuthService {
   }
 
   async login(loginData: LoginDto) {
-    const userExist = await this.userService.findUserByEmail(loginData.email);
+    // 🔒 SEGURIDAD (C8): única query del sistema que carga el hash del password
+    const userExist = await this.userService.findUserByEmailWithPassword(loginData.email);
     if (!userExist) throw new BadRequestException('Credenciales inválidas');
 
+    // 🔒 SEGURIDAD (B1): usuario de Google sin contraseña local — mismo
+    // mensaje genérico para no revelar el método de registro de un email ajeno
     if (!userExist.password) {
-      throw new BadRequestException(
-        'Este usuario se registró con Google y no tiene contraseña',
-      );
+      throw new BadRequestException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password);
     if (!isPasswordValid) throw new BadRequestException('Credenciales inválidas');
 
-    const payload = { email: userExist.email, sub: userExist.id, role: userExist.role };
+    // 🔒 SEGURIDAD (punto 15): el JWT incluye tokenVersion para revocación
+    const payload = {
+      email: userExist.email,
+      sub: userExist.id,
+      role: userExist.role,
+      tokenVersion: userExist.tokenVersion ?? 0,
+    };
     const token = this.jwtService.sign(payload);
 
     const { password, ...userWithoutPass } = userExist;
@@ -73,9 +80,14 @@ export class AuthService {
         photo: googleUser.photo,
         password: '',
         phone: '',
-        role: Role.USER,
+        // El rol NO se pasa: la entidad lo asigna por default (Role.USER)
       };
       user = await this.userService.createUser(partialUser);
+      // Los defaults de la entidad los aplica la DB, pero save() no los
+      // devuelve: los fijamos para que el payload del JWT y la respuesta
+      // tengan los valores reales
+      if (!user.role) user.role = Role.USER;
+      if (user.tokenVersion == null) user.tokenVersion = 0;
     }
 
     // 👇 ahora pasa el id también
@@ -89,11 +101,23 @@ export class AuthService {
         .catch((err) => console.error('[NOTIF ADMIN] Error notificando usuario Google:', err));
     }
 
-    const payload = { email: user.email, sub: user.id, role: user.role };
+    // 🔒 SEGURIDAD (punto 15): el JWT incluye tokenVersion para revocación
+    const payload = {
+      email: user.email,
+      sub: user.id,
+      role: user.role,
+      tokenVersion: user.tokenVersion ?? 0,
+    };
     const token = this.jwtService.sign(payload);
 
     const { password, ...userWithoutPass } = user;
     return { token, user: userWithoutPass };
+  }
+
+  // 🔒 SEGURIDAD (punto 15): logout real — incrementa tokenVersion e
+  // invalida todos los tokens emitidos hasta ahora para este usuario
+  async logout(userId: number): Promise<void> {
+    await this.userService.incrementTokenVersion(userId);
   }
 
   async getMe(userId: number) {
