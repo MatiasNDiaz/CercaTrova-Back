@@ -51,11 +51,9 @@ export class NotificationService {
       const prefTypeId = pref.typeOfProperty?.id ? Number(pref.typeOfProperty.id) : null;
       const propTypeId = property.typeOfProperty?.id ? Number(property.typeOfProperty.id) : null;
 
-      // Filtros estrictos — si no coinciden, saltar
       if (prefTypeId && prefTypeId !== propTypeId) continue;
       if (pref.operationType && pref.operationType !== property.operationType) continue;
 
-      // Conteo dinámico de criterios activos
       const criteriaToCheck = [
         pref.zone, pref.typeOfProperty, pref.preferredPrice,
         pref.minRooms, pref.minBathrooms, pref.m2, pref.operationType,
@@ -70,44 +68,31 @@ export class NotificationService {
 
       if (pref.zone && property.zone?.toLowerCase().includes(pref.zone.toLowerCase()))
         matched.push(`Zona: ${pref.zone}`);
-
       if (pref.localidad && property.localidad?.trim().toLowerCase() === pref.localidad.toLowerCase())
         matched.push(`Localidad: ${pref.localidad}`);
-
       if (pref.barrio && property.barrio?.trim().toLowerCase() === pref.barrio.toLowerCase())
         matched.push(`Barrio: ${pref.barrio}`);
-
       if (pref.operationType && pref.operationType === property.operationType)
         matched.push(`Operación: ${property.operationType}`);
-
       if (prefTypeId && prefTypeId === propTypeId)
         matched.push(`Tipo: ${property.typeOfProperty?.name || 'Inmueble'}`);
-
       if (pref.preferredPrice && this.priceMatches(property.price, pref.preferredPrice)) {
         const diff = property.price - pref.preferredPrice;
         matched.push(`Precio: $${property.price} (${diff > 0 ? '+' : ''}${diff} vs tu búsqueda)`);
       }
-
       if (pref.minRooms && (property.rooms ?? 0) >= pref.minRooms)
         matched.push(`Habitaciones: ${property.rooms} (mínimo ${pref.minRooms})`);
-
       if (pref.minBathrooms && (property.bathrooms ?? 0) >= pref.minBathrooms)
         matched.push(`Baños: ${property.bathrooms}`);
-
       if (pref.m2 && this.m2Matches(property.m2, pref.m2))
         matched.push(`Superficie: ${property.m2} m² (acorde a tu búsqueda)`);
-
       if (pref.property_deed === true && property.property_deed === true)
         matched.push('Tiene escrituras');
-
       if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null)
         if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity)))
           matched.push(`Antigüedad: ${property.antiquity} años`);
-
-      // ── NUEVOS: garage y patio ──
       if (pref.garage === true && property.garage === true)
         matched.push('Tiene garage');
-
       if (pref.patio === true && property.patio === true)
         matched.push('Tiene patio');
 
@@ -119,7 +104,7 @@ export class NotificationService {
         user: pref.user,
         title: '¡Propiedad que te puede interesar!',
         message: `Encontramos una propiedad que cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
-        propertyId: property.id, // <--- PASAR EL ID AQUÍ
+        propertyId: property.id,
       }));
 
       try {
@@ -149,8 +134,7 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // 2. BROADCAST GLOBAL — notifica a todos los usuarios
-  //    que NO recibieron ya un mail de matching
+  // 2. BROADCAST GLOBAL
   // -----------------------------------------------------
   async broadcastNewProperty(property: Property, excludedIds: Set<number> = new Set()) {
     const allUsers = await this.usersService.getAllUsers();
@@ -188,24 +172,20 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // 3. BAJA DE PRECIO — solo usuarios con notifyPriceDrops: true
+  // 3. BAJA DE PRECIO
   // -----------------------------------------------------
   async handlePriceChange(property: Property, oldPrice: number) {
-    // Solo notificamos si el precio BAJÓ
     if ((property.price ?? 0) >= oldPrice) return;
 
     const allUsers = await this.usersService.getAllUsers();
     const imageUrls = property.images?.map((i) => i.url) ?? [];
 
-    // Obtener preferencias para filtrar solo los que quieren notificaciones de precio
     const prefs = await this.searchPrefService.findAllWithUsers();
     const prefsByUserId = new Map(prefs.map((p) => [p.user?.id, p]));
 
     const usersToNotify = allUsers.filter((u) => {
       if (!u.email) return false;
       const pref = prefsByUserId.get(u.id);
-      // Si no tiene preferencias guardadas, le notificamos igual (comportamiento global)
-      // Si tiene preferencias, respetamos el flag notifyPriceDrops
       return !pref || pref.notifyPriceDrops !== false;
     });
 
@@ -277,7 +257,7 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // GET para el frontend
+  // GET para el usuario
   // -----------------------------------------------------
   async getForUser(userId: number) {
     return this.repo.find({
@@ -295,7 +275,7 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
-  // MARCAR TODAS COMO LEÍDAS
+  // MARCAR TODAS COMO LEÍDAS (usuario)
   // -----------------------------------------------------
   async markAllAsRead(userId: number) {
     await this.repo
@@ -305,5 +285,138 @@ export class NotificationService {
       .where('userId = :userId AND read = false', { userId })
       .execute();
     return { message: 'Todas las notificaciones marcadas como leídas' };
+  }
+
+  // -----------------------------------------------------
+  // HELPER PRIVADO ADMIN — ahora con relatedUserId 👈
+  // -----------------------------------------------------
+  private async createAdminNotification(
+    title: string,
+    message: string,
+    propertyId?: number,
+    relatedUserId?: number, // 👈
+  ) {
+    const admins = await this.usersService.getAdminUsers();
+    if (!admins.length) return;
+
+    await this.repo.save(
+      admins.map((admin) =>
+        this.repo.create({
+          user: admin,
+          title,
+          message,
+          propertyId: propertyId ?? null,
+          relatedUserId: relatedUserId ?? null, // 👈
+          targetRole: 'admin',
+        }),
+      ),
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 1. NUEVO USUARIO — ahora recibe id 👈
+  // -----------------------------------------------------
+  async notifyAdminNewUser(newUser: { id: number; name: string; email: string }) {
+    await this.createAdminNotification(
+      'Nuevo usuario registrado',
+      `${newUser.name} (${newUser.email}) se registró en la plataforma.`,
+      null,
+      newUser.id, // 👈
+      
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 2. NUEVO COMENTARIO
+  // -----------------------------------------------------
+  async notifyAdminNewComment(data: {
+    userName: string;
+    propertyTitle: string;
+    propertyId: number;
+    commentPreview: string;
+     relatedUserId: number; // 👈 agregar
+  }) {
+    await this.createAdminNotification(
+      'Nuevo comentario en propiedad',
+      `${data.userName} comentó en "${data.propertyTitle}": "${data.commentPreview.slice(0, 80)}${data.commentPreview.length > 80 ? '...' : ''}"`,
+      data.propertyId,
+         data.relatedUserId, // 👈
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 3. NUEVA VALORACIÓN
+  // -----------------------------------------------------
+  async notifyAdminNewRating(data: {
+    userName: string;
+    propertyTitle: string;
+    propertyId: number;
+    score: number;
+     relatedUserId: number; // 👈 agregar
+  }) {
+    await this.createAdminNotification(
+      'Nueva valoración en propiedad',
+      `${data.userName} valoró "${data.propertyTitle}" con ${data.score} estrella${data.score !== 1 ? 's' : ''}.`,
+      data.propertyId,
+         data.relatedUserId, // 👈
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 4. SOLICITUD DE PUBLICACIÓN
+  // -----------------------------------------------------
+  async notifyAdminNewPropertyRequest(data: {
+    userName: string;
+    direccion: string;
+    barrio: string;
+    localidad: string;
+     relatedUserId: number; // 👈 agregar
+  }) {
+    await this.createAdminNotification(
+      'Nueva solicitud de publicación',
+      `${data.userName} solicitó publicar una propiedad en ${data.direccion}, ${data.barrio}, ${data.localidad}.`,
+      null,         
+      data.relatedUserId, // 👈
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 5. FAVORITO
+  // -----------------------------------------------------
+  async notifyAdminNewFavorite(data: {
+    userName: string;
+    propertyTitle: string;
+    propertyId: number;
+     relatedUserId: number; // 👈 agregar
+  }) {
+    await this.createAdminNotification(
+      'Propiedad guardada en favoritos',
+      `${data.userName} guardó "${data.propertyTitle}" en sus favoritos.`,
+      data.propertyId,
+         data.relatedUserId, // 👈
+    );
+  }
+
+  // -----------------------------------------------------
+  // GET para el admin
+  // -----------------------------------------------------
+  async getForAdmin() {
+    return this.repo.find({
+      where: { targetRole: 'admin' },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // -----------------------------------------------------
+  // MARCAR TODAS COMO LEÍDAS (admin)
+  // -----------------------------------------------------
+  async markAllAdminAsRead() {
+    await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ read: true })
+      .where("targetRole = 'admin' AND read = false")
+      .execute();
+    return { message: 'Todas las notificaciones del admin marcadas como leídas' };
   }
 }

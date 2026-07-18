@@ -10,6 +10,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { Property } from '../properties/entities/property.entity';
 import { User } from '../users/entities/user.entity';
+import { NotificationService } from '../notifications/notifications.service'; // 👈
 
 @Injectable()
 export class CommentsService {
@@ -22,15 +23,12 @@ export class CommentsService {
 
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+
+    private readonly notificationService: NotificationService, // 👈
   ) {}
 
-  // -----------------------------------------------------
-  // CREATE COMMENT
-  // -----------------------------------------------------
   async create(propertyId: number, userId: number, dto: CreateCommentDto) {
-    const property = await this.propertyRepo.findOne({
-      where: { id: propertyId },
-    });
+    const property = await this.propertyRepo.findOne({ where: { id: propertyId } });
     if (!property) throw new NotFoundException('Property not found');
 
     const user = await this.userRepo.findOne({ where: { id: userId } });
@@ -42,36 +40,43 @@ export class CommentsService {
       user,
     });
 
-    return this.commentRepo.save(newComment);
+    const saved = await this.commentRepo.save(newComment);
+
+    // 👇 Notificar al admin — no bloqueante
+    this.notificationService
+      .notifyAdminNewComment({
+        userName: user.name,
+        propertyTitle: property.title,
+        propertyId: property.id,
+        commentPreview: dto.message,
+        relatedUserId: user.id, // 👈
+      })
+      .catch((err) => console.error('[NOTIF ADMIN] Error en comentario:', err));
+
+    return saved;
   }
 
-  // -----------------------------------------------------
-  // GET ALL COMMENTS OF A PROPERTY
-  // -----------------------------------------------------
   async findByProperty(propertyId: number) {
     return this.commentRepo.find({
       where: { property: { id: propertyId } },
       relations: ['user'],
       select: {
-      id: true,
-      message: true,
-      created_at: true,
-      userId: true,
-      propertyId: true,
-      user: {
         id: true,
-        name: true,
-        surname: true,
-        photo: true,
+        message: true,
+        created_at: true,
+        userId: true,
+        propertyId: true,
+        user: {
+          id: true,
+          name: true,
+          surname: true,
+          photo: true,
+        },
       },
-    },
       order: { created_at: 'DESC' },
     });
   }
 
-  // -----------------------------------------------------
-  // UPDATE OWN COMMENT
-  // -----------------------------------------------------
   async update(commentId: number, userId: number, dto: UpdateCommentDto) {
     const comment = await this.commentRepo.findOne({
       where: { id: commentId },
@@ -79,21 +84,14 @@ export class CommentsService {
     });
 
     if (!comment) throw new NotFoundException('Comment not found');
-
-    if (comment.user.id !== userId) {
+    if (comment.user.id !== userId)
       throw new ForbiddenException('You cannot edit a comment that is not yours');
-    }
 
-    if (dto.message !== undefined) {
-      comment.message = dto.message;
-    }
+    if (dto.message !== undefined) comment.message = dto.message;
 
     return this.commentRepo.save(comment);
   }
 
-  // -----------------------------------------------------
-  // DELETE COMMENT (OWNER OR ADMIN)
-  // -----------------------------------------------------
   async remove(commentId: number, userId: number, isAdmin: boolean) {
     const comment = await this.commentRepo.findOne({
       where: { id: commentId },
@@ -101,12 +99,8 @@ export class CommentsService {
     });
 
     if (!comment) throw new NotFoundException('Comment not found');
-
-    const isOwner = comment.user.id === userId;
-
-    if (!isOwner && !isAdmin) {
+    if (comment.user.id !== userId && !isAdmin)
       throw new ForbiddenException('Not allowed to delete this comment');
-    }
 
     await this.commentRepo.remove(comment);
     return { message: 'Comment deleted successfully' };

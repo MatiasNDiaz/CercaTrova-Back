@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { PropertyRequest, RequestStatus } from './entities/PropertyRequest';
 import { CreateRequestPropertyDto } from './dto/createRequestPropertyDto';
 import { NotificationService } from '../notifications/notifications.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class PropertyRequestService {
@@ -11,19 +12,37 @@ export class PropertyRequestService {
     @InjectRepository(PropertyRequest)
     private readonly requestRepo: Repository<PropertyRequest>,
     private readonly notificationService: NotificationService,
+     private readonly usersService: UsersService, // 👈
   ) {}
 
-  // 1. Crear la solicitud (Usuario logueado)
   async create(dto: CreateRequestPropertyDto, userId: number): Promise<PropertyRequest> {
     const newRequest = this.requestRepo.create({
       ...dto,
       userId,
       status: RequestStatus.ENVIADO,
     });
-    return await this.requestRepo.save(newRequest);
+
+    const saved = await this.requestRepo.save(newRequest);
+
+    // 👇 Buscar el usuario para obtener nombre y apellido reales
+    const user = await this.usersService.getUserById(userId).catch(() => null);
+    const userName = user
+      ? `${user.name}${user.surname ? ' ' + user.surname : ''}`.trim()
+      : `Usuario #${userId}`;
+
+    this.notificationService
+      .notifyAdminNewPropertyRequest({
+        userName, // 👈 nombre real
+        direccion: dto.direccion,
+        barrio: dto.barrio,
+        localidad: dto.localidad,
+        relatedUserId: userId, // 👈
+      })
+      .catch((err) => console.error('[NOTIF ADMIN] Error en solicitud:', err));
+
+    return saved;
   }
 
-  // 2. Ver todas las solicitudes (Solo Agente)
   async findAll(): Promise<PropertyRequest[]> {
     return await this.requestRepo.find({
       relations: ['user'],
@@ -31,7 +50,6 @@ export class PropertyRequestService {
     });
   }
 
-  // 3. Ver una solicitud en detalle
   async findOne(id: number): Promise<PropertyRequest> {
     const request = await this.requestRepo.findOne({
       where: { id },
@@ -41,8 +59,6 @@ export class PropertyRequestService {
     return request;
   }
 
-  // 4. Buscar por Usuario
-  // ← Fix: devuelve [] en lugar de 404 cuando no hay solicitudes
   async findByUser(userId: number): Promise<PropertyRequest[]> {
     return await this.requestRepo.find({
       where: { userId },
@@ -51,13 +67,11 @@ export class PropertyRequestService {
     });
   }
 
-  // 5. Cambiar estado + notificar al usuario
   async updateStatus(id: number, status: RequestStatus): Promise<PropertyRequest> {
-    const request = await this.findOne(id); // ya trae relations: ['user']
+    const request = await this.findOne(id);
     request.status = status;
     const saved = await this.requestRepo.save(request);
 
-    // Notificar en background — no bloquea la respuesta
     this.notificationService.handleRequestStatusChange(saved).catch((err) =>
       console.error('[ERROR] No se pudo notificar cambio de estado:', err),
     );
@@ -65,14 +79,12 @@ export class PropertyRequestService {
     return saved;
   }
 
-  // 6. Eliminar solicitud
   async remove(id: number): Promise<{ message: string }> {
     const request = await this.findOne(id);
     await this.requestRepo.remove(request);
     return { message: `Solicitud #${id} eliminada correctamente` };
   }
 
-  // 7. El usuario ve una solicitud específica suya (con verificación de ownership)
   async findMyOne(id: number, userIdFromToken: number): Promise<PropertyRequest> {
     const request = await this.requestRepo.findOne({ where: { id } });
     if (!request) throw new NotFoundException(`La solicitud #${id} no existe.`);

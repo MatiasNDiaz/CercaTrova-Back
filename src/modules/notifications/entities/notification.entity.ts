@@ -34,6 +34,10 @@ export class Notification {
   @Column({ type: 'varchar', default: 'user' })
   targetRole: NotificationTargetRole;
 
+  @Column({ nullable: true })   // 👈 única línea nueva
+  relatedUserId: number;
+
+
   @CreateDateColumn()
   createdAt: Date;
 }

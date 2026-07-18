@@ -7,6 +7,7 @@ import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GoogleAuthService } from './google.auth.service';
+import { NotificationModule } from '../notifications/notifications.module';
 
 @Module({
   // 'imports' configura todos los módulos que proporcionan funcionalidad
@@ -41,7 +42,8 @@ import { GoogleAuthService } from './google.auth.service';
 
     // Se importa UsersModule para poder acceder a los proveedores (ej: UserService)
     // que AuthModule necesita para verificar las credenciales del usuario durante el login.
-    UsersModule
+    UsersModule,
+    NotificationModule, // 👈 agregar
   ],
 
   // 'controllers' son los puntos de entrada HTTP (ej: /auth/login, /auth/register).

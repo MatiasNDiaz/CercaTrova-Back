@@ -7,6 +7,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
 import * as bcrypt from 'bcrypt';
 import { PropertyRequest } from '../PropertyRequest/entities/PropertyRequest';
+import { Role } from './enums/role.enum';
 
 @Injectable()
 export class UsersService {
@@ -126,4 +127,12 @@ async deleteUser(id: number): Promise<void> {
     // Como TODO usuario debe registrarse con email, esto siempre será true
     return !!user.email;
   }
+
+
+  // users.service.ts — agregar este método
+async getAdminUsers() {
+  return this.userRepository.find({
+    where: { role: Role.ADMIN },
+  });
+}
 }

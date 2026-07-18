@@ -4,90 +4,102 @@ import { CreateUserDto } from '../users/dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login-auth.dto';
 import { JwtService } from '@nestjs/jwt';
-import { CreateGoogleUserDto } from './dto/create-google-user.dto';
 import { Role } from '../users/enums/role.enum';
+import { NotificationService } from '../notifications/notifications.service';
 import { GoogleAuthService } from './google.auth.service';
-
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly userService:UsersService,
+    private readonly userService: UsersService,
     private readonly jwtService: JwtService,
-    private readonly googleAuthService: GoogleAuthService
-  ){}
+    private readonly googleAuthService: GoogleAuthService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
-  // REGISTER
   async register(registerData: CreateUserDto) {
-    // validacion de usuario existente
-    const userExist = await this.userService.findUserByEmail(registerData.email)
-    if(userExist) throw new BadRequestException("Usuario ya existente");
+    const userExist = await this.userService.findUserByEmail(registerData.email);
+    if (userExist) throw new BadRequestException('Usuario ya existente');
 
-    // Encriptar la contraseña del usuario
     const hashedPassword = await bcrypt.hash(registerData.password, 10);
     registerData.password = hashedPassword;
 
-    // creamos el usuario llamando la funcion de crear el usuario de userService
     const createdUser = await this.userService.createUser(registerData);
-    
-    // Oculatamos la contraseña para que no quede a la vista 
-    const {password, ...userWithoutPass} = createdUser
 
-    // retornamos el usuario sin la contraseña
-    return userWithoutPass
+    // 👇 ahora pasa el id también
+    this.notificationService
+      .notifyAdminNewUser({
+        id: createdUser.id,
+        name: createdUser.name,
+        email: createdUser.email,
+      })
+      .catch((err) => console.error('[NOTIF ADMIN] Error notificando nuevo usuario:', err));
+
+    const { password, ...userWithoutPass } = createdUser;
+    return userWithoutPass;
   }
 
-  // LOGIN
   async login(loginData: LoginDto) {
-  const userExist = await this.userService.findUserByEmail(loginData.email);
-  if (!userExist) throw new BadRequestException("Credenciales inválidas");
+    const userExist = await this.userService.findUserByEmail(loginData.email);
+    if (!userExist) throw new BadRequestException('Credenciales inválidas');
 
-  if (!userExist.password) {
-    throw new BadRequestException(
-      "Este usuario se registró con Google y no tiene contraseña"
-    );
+    if (!userExist.password) {
+      throw new BadRequestException(
+        'Este usuario se registró con Google y no tiene contraseña',
+      );
+    }
+
+    const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password);
+    if (!isPasswordValid) throw new BadRequestException('Credenciales inválidas');
+
+    const payload = { email: userExist.email, sub: userExist.id, role: userExist.role };
+    const token = this.jwtService.sign(payload);
+
+    const { password, ...userWithoutPass } = userExist;
+    return { token, user: userWithoutPass };
   }
 
-  const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password);
-  if (!isPasswordValid) throw new BadRequestException("Credenciales inválidas");
+  async googleLogin(idToken: string) {
+    const googleUser = await this.googleAuthService.verifyIdToken(idToken);
 
-  const payload = { email: userExist.email, sub: userExist.id, role: userExist.role };
-  const token = this.jwtService.sign(payload);
+    let user = await this.userService.findUserByEmail(googleUser.email);
+    const isNewUser = !user;
 
-  const { password, ...userWithoutPass } = userExist;
-  return { token, user: userWithoutPass }; // ✅ cambio clave
-}
-// LOGIN CON GOOGLE
-async googleLogin(idToken: string) {
-  const googleUser = await this.googleAuthService.verifyIdToken(idToken);
+    if (!user) {
+      const partialUser: CreateUserDto = {
+        name: googleUser.name || 'Nombre',
+        surname: googleUser.surname || 'Apellido',
+        email: googleUser.email,
+        photo: googleUser.photo,
+        password: '',
+        phone: '',
+        role: Role.USER,
+      };
+      user = await this.userService.createUser(partialUser);
+    }
 
-  let user = await this.userService.findUserByEmail(googleUser.email);
-  if (!user) {
-    const partialUser: CreateUserDto = {
-      name: googleUser.name || 'Nombre',
-      surname: googleUser.surname || 'Apellido',
-      email: googleUser.email,
-      photo: googleUser.photo,
-      password: '',  
-      phone: '',     
-      role: Role.USER,
-    };
-    user = await this.userService.createUser(partialUser);
+    // 👇 ahora pasa el id también
+    if (isNewUser) {
+      this.notificationService
+        .notifyAdminNewUser({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+        })
+        .catch((err) => console.error('[NOTIF ADMIN] Error notificando usuario Google:', err));
+    }
+
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    const token = this.jwtService.sign(payload);
+
+    const { password, ...userWithoutPass } = user;
+    return { token, user: userWithoutPass };
   }
 
-  const payload = { email: user.email, sub: user.id, role: user.role };
-  const token = this.jwtService.sign(payload);
-
-  const { password, ...userWithoutPass } = user;
-  return { token, user: userWithoutPass }; // ✅ cambio clave
-}
-
-// 👇 NUEVO: busca el usuario completo en la DB y lo devuelve sin contraseña
   async getMe(userId: number) {
     const user = await this.userService.getUserById(userId);
     if (!user) throw new BadRequestException('Usuario no encontrado');
     const { password, ...userWithoutPass } = user;
     return userWithoutPass;
   }
-
 }

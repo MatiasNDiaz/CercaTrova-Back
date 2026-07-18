@@ -12,30 +12,34 @@ export class EmailService {
 
   }
 
-  async sendEmail(to: string, subject: string, html: string) {
-    try {
-      const msg = {
-        to,
-        from: 'nahuel132003@gmail.com', // tu remitente verificado
-        subject,
-        html,
-      };
-
-      await sgMail.send(msg);
-    } catch (error) {
-      console.error('ERROR SENDGRID:', error);
-      throw new InternalServerErrorException('Error enviando email con SendGrid');
-    }
+async sendEmail(to: string, subject: string, html: string) {
+  try {
+    console.log(`[MAIL] Intentando enviar a: ${to}, subject: ${subject}`); // 👈
+    const msg = {
+      to,
+      from: 'matidiazargentino21@gmail.com',
+      subject,
+      html,
+    };
+    await sgMail.send(msg);
+    console.log(`[MAIL] ✅ Enviado correctamente a: ${to}`); // 👈
+  } catch (error) {
+    console.error('ERROR SENDGRID completo:', JSON.stringify(error?.response?.body ?? error, null, 2)); // 👈 más detalle
+    throw new InternalServerErrorException('Error enviando email con SendGrid');
   }
+}
   
-  async sendMultipleEmails(toList: string[], subject: string, html: string) {
-  const msgs = toList.map(to => ({
-    to,
-    from: 'nahuel132003@gmail.com',
-    subject,
-    html
-  }));
+async sendMultipleEmails(toList: string[], subject: string, html: string) {
+  // 👇 En lugar de mandar todos juntos, mandamos uno por uno
+  const results = await Promise.allSettled(
+    toList.map(to => this.sendEmail(to, subject, html))
+  );
 
-  await sgMail.send(msgs);
-  }
+  // Log de errores individuales sin romper todo
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      console.error(`[ERROR MAIL] No se pudo enviar a ${toList[i]}:`, result.reason);
+    }
+  });
+}
 }
