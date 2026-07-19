@@ -1,5 +1,10 @@
 // src/modules/PropertyRequest/dto/createRequestPropertyDto.ts
-import { IsString, IsNumber, IsBoolean, IsOptional, Min, IsNotEmpty } from 'class-validator';
+import { IsString, IsNumber, IsBoolean, IsOptional, Min, IsNotEmpty, IsEnum } from 'class-validator';
+import {
+  TipoPropiedadRequest,
+  TipoOperacionRequest,
+  EstadoConservacionRequest,
+} from './enumsPropertyRequest';
 
 export class CreateRequestPropertyDto {
   @IsString()
@@ -18,14 +23,22 @@ export class CreateRequestPropertyDto {
   @IsString()
   pisoDepto?: string;
 
-  @IsString()
-  tipoPropiedad: string;
+  // (ERROR_FIXES): antes eran @IsString() libre — se guardaban valores
+  // arbitrarios inconsistentes con las stats y con Property
+  @IsEnum(TipoPropiedadRequest, {
+    message: `tipoPropiedad inválido. Valores permitidos: ${Object.values(TipoPropiedadRequest).join(', ')}`,
+  })
+  tipoPropiedad: TipoPropiedadRequest;
 
-  @IsString()
-  tipoOperacion: string;
+  @IsEnum(TipoOperacionRequest, {
+    message: `tipoOperacion inválido. Valores permitidos: ${Object.values(TipoOperacionRequest).join(', ')}`,
+  })
+  tipoOperacion: TipoOperacionRequest;
 
-  @IsString()
-  estadoConservacion: string;
+  @IsEnum(EstadoConservacionRequest, {
+    message: `estadoConservacion inválido. Valores permitidos: ${Object.values(EstadoConservacionRequest).join(', ')}`,
+  })
+  estadoConservacion: EstadoConservacionRequest;
 
   @IsNumber()
   @Min(0)
@@ -36,12 +49,15 @@ export class CreateRequestPropertyDto {
   m2Cubiertos: number;
 
   @IsNumber()
+  @Min(0)
   habitaciones: number;
 
   @IsNumber()
+  @Min(0)
   baños: number;
 
   @IsNumber()
+  @Min(0)
   antiguedad: number;
 
   @IsOptional()

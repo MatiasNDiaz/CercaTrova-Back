@@ -13,7 +13,7 @@ import { NotificationModule } from '../notifications/notifications.module';
     TypeOrmModule.forFeature([Property, PropertyType]),
     ImagesPropertyModule,
     CloudinaryModule,
-     NotificationModule 
+    NotificationModule,
   ],
   controllers: [PropertiesController],
   providers: [PropertiesService],

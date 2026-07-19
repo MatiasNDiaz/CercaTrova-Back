@@ -52,7 +52,9 @@ Config is read from a `.env` file at the repo root (loaded both by `@nestjs/conf
 
 `typeOrmConfig` (`src/config/typeorm.config.ts`) has `synchronize: NODE_ENV !== 'production'` — in development the schema is auto-synced from entities on boot; in production it is disabled and real TypeORM migrations must be generated and run before any deploy (none exist yet). When adding a new entity, register it in `typeOrmConfig.entities[]` (in addition to importing its module in `app.module.ts`).
 
-On every boot, `BootstrapService.createDefaultAdmin()` (`src/common/bootstraps/bootstrap.service.ts`, invoked from `main.ts`) upserts an admin user from `ADMIN_*` env vars if one doesn't already exist for that email.
+On every boot, `BootstrapService.ensurePostgresExtensions()` runs `CREATE EXTENSION IF NOT EXISTS unaccent;` (required by the `unaccent(...)` calls in `PropertiesService.filter()`), then `createDefaultAdmin()` upserts an admin user from `ADMIN_*` env vars if one doesn't already exist for that email. Both are in `src/common/bootstraps/bootstrap.service.ts`, invoked from `main.ts`.
+
+**Managed Postgres hosting note:** if the DB connection user lacks `CREATE EXTENSION` privileges (common on managed hosting), `ensurePostgresExtensions()` logs a warning and the app still boots — but every text filter on `GET /properties/filter` (barrio/localidad/provincia/zone/search) will fail with a SQL error until a superuser runs `CREATE EXTENSION IF NOT EXISTS unaccent;` manually on that database.
 
 CORS in `main.ts` reads `FRONTEND_URL` (with `credentials: true`); set it wherever the frontend origin changes instead of editing code.
 
@@ -94,6 +96,10 @@ Google OAuth login is handled by `GoogleAuthService` (`src/modules/auth/google.a
 `main.ts` installs a global `ValidationPipe` with `whitelist: true`, `forbidNonWhitelisted: true`, and `transform: true` (with implicit type conversion) — DTOs must declare `class-validator` decorators for every accepted field, and unexpected fields are rejected outright rather than silently dropped.
 
 - Multipart endpoints that receive a DTO as a JSON string field must validate it with `JsonToDtoPipe` (`src/common/pipes/json-to-dto.pipe.ts`) — never `JSON.parse()` the body manually.
+- Before saving anything that references another entity by id, validate it with `ensureExists(repo, id, 'La entidad')` (`src/common/helpers/ensure-exists.helper.ts`) → 404, instead of letting the FK violation surface as a 500.
+- In service `catch` blocks use `handleServiceError(logger, error, publicMessage)` (`src/common/helpers/handle-service-error.helper.ts`): it re-throws intentional `HttpException`s untouched and logs everything else internally — never concatenate `error.message` into a response.
+- Postgres unique-constraint races are detected with `isUniqueViolation(error)` (`src/common/helpers/database-error.helper.ts`) and converted to a context-appropriate `ConflictException` (409) — except registration, which keeps the generic anti-enumeration 400.
+- Failures of external services (Cloudinary, SendGrid) respond **502** with an honest non-technical message ("No pudimos procesar la imagen…"); irreversible external deletions run LAST, after the DB operation succeeded, and post-success cleanup is best-effort (log only).
 - Every image-upload interceptor must pass `imageUploadOptions` (`src/common/multer/image-upload.options.ts`): 5 MB max, `image/*` only.
 - Rate limiting is global (`ThrottlerGuard` via `APP_GUARD`, 100 req/min); credential endpoints use a stricter `@Throttle` (5/min) — keep that on any new auth-like route.
 

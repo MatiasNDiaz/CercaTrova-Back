@@ -3,10 +3,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  BadGatewayException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Property } from './entities/property.entity';
+import { User } from '../users/entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
@@ -21,6 +25,8 @@ import { StatusProperty } from './dto/enumsStatusProperty';
 
 @Injectable()
 export class PropertiesService {
+  private readonly logger = new Logger(PropertiesService.name);
+
   constructor(
     @InjectRepository(Property)
     private readonly propertyRepo: Repository<Property>,
@@ -60,7 +66,15 @@ export class PropertiesService {
       
       return result;
     } catch (e) {
-      throw new BadRequestException('No se pudieron obtener las propiedades');
+      // (ERROR_FIXES R-20): un fallo interno de la DB es un 500, no un 400;
+      // el mensaje genérico se mantiene y el detalle se loguea
+      this.logger.error(
+        'No se pudieron obtener las propiedades',
+        e instanceof Error ? e.stack : String(e),
+      );
+      throw new InternalServerErrorException(
+        'No se pudieron obtener las propiedades',
+      );
     }
   }
   
@@ -95,7 +109,7 @@ export class PropertiesService {
   // -------------------------
   // Crear property + images
   // -------------------------
-async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
+async createWithImages(dto: CreatePropertyDto, images: MulterFile[], agentId?: number) {
   // 0) Mapear typeOfProperty si viene en el DTO
   if (dto.typeOfPropertyId) {
     const type = await this.propertyTypeRepo.findOne({ where: { id: dto.typeOfPropertyId } });
@@ -108,6 +122,13 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
 
   // 1) Crear y salvar la propiedad básica
   const property = this.propertyRepo.create(dto);
+
+  // (ERROR_FIXES R-27): la property queda vinculada al admin que la crea —
+  // antes el campo agent quedaba null
+  if (agentId) {
+    property.agent = { id: agentId } as User;
+  }
+
   await this.propertyRepo.save(property);
 
   // 2) Subir y guardar imágenes si las hay (delegado)
@@ -115,8 +136,29 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
   // salteaba el disparo de notificaciones — ahora se notifica SIEMPRE
   let savedImages: PropertyImages[] = [];
   if (images && images.length > 0) {
-    savedImages = await this.propertyImagesService.createMany(property, images);
-    property.images = savedImages;
+    try {
+      savedImages = await this.propertyImagesService.createMany(property, images);
+      property.images = savedImages;
+    } catch (error) {
+      // 🧱 ROLLBACK MANUAL (ERROR_FIXES): si Cloudinary falla acá, la
+      // property ya quedó guardada en el paso 1 — la borramos (junto con
+      // cualquier imagen que sí haya alcanzado a persistirse) para no dejar
+      // una publicación huérfana, y respondemos 502 honesto.
+      this.logger.error(
+        `Fallo al procesar imágenes; rollback de property ${property.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      try {
+        await this.propertyImagesService.deleteAllByPropertyId(property.id);
+        await this.propertyRepo.delete(property.id);
+      } catch (rollbackError) {
+        this.logger.error(
+          `Rollback incompleto de property ${property.id} — revisar manualmente`,
+          rollbackError instanceof Error ? rollbackError.stack : String(rollbackError),
+        );
+      }
+      throw new BadGatewayException('No se pudieron procesar las imágenes. Intentá de nuevo.');
+    }
   }
 
   // 3) Recargar la propiedad COMPLETA con relaciones necesarias para el mail
@@ -170,22 +212,40 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
 
   if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
 
+  // (ERROR_FIXES): validar el tipo también en update — antes un id
+  // inexistente violaba la FK y salía como 500 (create ya lo validaba)
+  if (dto.typeOfPropertyId) {
+    const type = await this.propertyTypeRepo.findOne({ where: { id: dto.typeOfPropertyId } });
+    if (!type) {
+      throw new NotFoundException(`No existe el tipo de propiedad con ID ${dto.typeOfPropertyId}`);
+    }
+    property.typeOfProperty = type;
+  }
+
   // Capturar precio antiguo ANTES de cambiar
   const oldPrice = property.price;
 
   // Actualizar campos (no persistir todavía)
   Object.assign(property, dto);
 
-  // Manejo de imágenes (eliminación y adición)
-  if (deleteImagesIds && deleteImagesIds.length > 0) {
-    await this.propertyImagesService.deleteManyByIds(deleteImagesIds);
-    // actualizar referencia en memoria si querés
-    property.images = property.images?.filter(i => !deleteImagesIds.includes(i.id));
-  }
+  // (ERROR_FIXES R-11): los borrados en Cloudinary son IRREVERSIBLES — van
+  // al final, después de que la subida de imágenes nuevas y el save de la
+  // property hayan tenido éxito. Antes, un fallo a mitad de camino dejaba
+  // imágenes ya destruidas y cambios sin guardar.
 
+  // 1) Subir imágenes nuevas (si falla acá, no se destruyó nada)
   if (newImages && newImages.length > 0) {
     const added = await this.propertyImagesService.createMany(property, newImages);
     property.images = [...(property.images || []), ...added];
+  }
+
+  // 2) Guardar los cambios de la property
+  await this.propertyRepo.save(property);
+
+  // 3) Recién ahora los borrados irreversibles
+  if (deleteImagesIds && deleteImagesIds.length > 0) {
+    await this.propertyImagesService.deleteManyByIds(deleteImagesIds);
+    property.images = property.images?.filter(i => !deleteImagesIds.includes(i.id));
   }
 
   if (dto.setCoverImageId) {
@@ -193,9 +253,6 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
   }
 
   await this.propertyImagesService.ensureCoverExists(id);
-
-  // Guardar cambios
-  await this.propertyRepo.save(property);
 
   // Notificar si cambió el precio: hacemos el handle después del save y en background
   if (dto.price && dto.price !== oldPrice) {
@@ -219,11 +276,22 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[]) {
 
     if (!property) throw new NotFoundException(`No existe la propiedad con ID ${id}`);
 
-    // delegar borrado de todas las imágenes (Cloudinary + DB)
-    await this.propertyImagesService.deleteAllByPropertyId(id);
-
-    // borrar la propiedad
+    // (ERROR_FIXES R-12): primero la DB — el ON DELETE CASCADE elimina los
+    // registros de imágenes junto con la property. La limpieza en Cloudinary
+    // (irreversible) va al final y es best-effort: si falla, la operación
+    // principal ya tuvo éxito y solo se loguea.
     await this.propertyRepo.delete(id);
+
+    for (const img of property.images ?? []) {
+      try {
+        await this.cloudinaryService.deleteFile(img.publicId);
+      } catch (cleanupError) {
+        this.logger.error(
+          `No se pudo limpiar en Cloudinary la imagen ${img.publicId} de la propiedad ${id}`,
+          cleanupError instanceof Error ? cleanupError.stack : String(cleanupError),
+        );
+      }
+    }
 
     return { message: `Propiedad ${id} eliminada correctamente` };
   }
@@ -305,12 +373,14 @@ async filter(filters: PropertyFilterDto) {
             .trim();
 
     // A) DETECCIÓN DE TIPOS (Prioridad nombres largos para evitar cortes en Regex)
+    // (ERROR_FIXES): ILIKE en vez de = — type.name es texto libre cargado por
+    // el admin (no un enum fijo), "Departamento" no matcheaba contra 'departamento'
     if (!typeOfPropertyId) {
-      if (s.match(/\b(departamentos|departamento|deptos|depto)\b/i)) qb.andWhere('type.name = :tName', { tName: 'departamento' });
-      else if (s.match(/\b(casas|casa)\b/i)) qb.andWhere('type.name = :tName', { tName: 'casa' });
-      else if (s.match(/\b(locales|local|comercio|negocio)\b/i)) qb.andWhere('type.name = :tName', { tName: 'local' });
-      else if (s.match(/\b(oficinas|oficina)\b/i)) qb.andWhere('type.name = :tName', { tName: 'oficina' });
-      else if (s.match(/\b(baldío|baldio|terrenos|terreno|lotes|lote)\b/i)) qb.andWhere('type.name = :tName', { tName: 'baldío' });
+      if (s.match(/\b(departamentos|departamento|deptos|depto)\b/i)) qb.andWhere('type.name ILIKE :tName', { tName: 'departamento' });
+      else if (s.match(/\b(casas|casa)\b/i)) qb.andWhere('type.name ILIKE :tName', { tName: 'casa' });
+      else if (s.match(/\b(locales|local|comercio|negocio)\b/i)) qb.andWhere('type.name ILIKE :tName', { tName: 'local' });
+      else if (s.match(/\b(oficinas|oficina)\b/i)) qb.andWhere('type.name ILIKE :tName', { tName: 'oficina' });
+      else if (s.match(/\b(baldío|baldio|terrenos|terreno|lotes|lote)\b/i)) qb.andWhere('type.name ILIKE :tName', { tName: 'baldío' });
     }
 
     // B) DETECCIÓN DE OPERACIÓN
@@ -330,16 +400,22 @@ async filter(filters: PropertyFilterDto) {
     
 
     // D) EXTRAER HABITACIONES (Orden correcto: Largo primero)
+    // (ERROR_FIXES): si ya vino un filtro explícito de rooms, no aplicar el
+    // match del NLP — evita un AND contradictorio (ej. search="3 habitaciones" + rooms=2).
+    // El s.replace() se hace SIEMPRE que haya match (aunque no se aplique el
+    // where) para no dejar el número suelto colando como búsqueda de texto libre.
     const roomsMatch = s.match(/(\d+)\s*(habitaciones|habitacion|dormitorios|dormitorio|cuartos|cuarto|rooms|room|hab)/i);
     if (roomsMatch) {
-      qb.andWhere('p.rooms = :rSearch', { rSearch: parseInt(roomsMatch[1]) });
+      if (!rooms) qb.andWhere('p.rooms = :rSearch', { rSearch: parseInt(roomsMatch[1]) });
       s = s.replace(roomsMatch[0], '');
     }
 
     // E) EXTRAER BAÑOS (Orden correcto: Largo primero)
+    // (ERROR_FIXES): mismo criterio que rooms — el filtro explícito manda solo,
+    // pero el texto matcheado igual se limpia de `s`
     const bathsMatch = s.match(/(\d+)\s*(baños|baño|banos|bano|toilets|toilet|bañ|ban)/i);
     if (bathsMatch) {
-      qb.andWhere('p.bathrooms = :bSearch', { bSearch: parseInt(bathsMatch[1]) });
+      if (!bathrooms) qb.andWhere('p.bathrooms = :bSearch', { bSearch: parseInt(bathsMatch[1]) });
       s = s.replace(bathsMatch[0], '');
     }
 

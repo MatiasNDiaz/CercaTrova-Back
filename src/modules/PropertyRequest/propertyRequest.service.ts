@@ -1,7 +1,17 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PropertyRequest, RequestStatus } from './entities/PropertyRequest';
+
+// (ERROR_FIXES R-15): transiciones válidas del ciclo de vida de una solicitud.
+// "aceptado" es terminal; una "rechazada" puede reconsiderarse volviendo a
+// revisión. Cambiar al mismo estado tampoco es una transición válida.
+const VALID_TRANSITIONS: Record<RequestStatus, RequestStatus[]> = {
+  [RequestStatus.ENVIADO]: [RequestStatus.REVISION, RequestStatus.ACEPTADO, RequestStatus.RECHAZADO],
+  [RequestStatus.REVISION]: [RequestStatus.ACEPTADO, RequestStatus.RECHAZADO],
+  [RequestStatus.ACEPTADO]: [],
+  [RequestStatus.RECHAZADO]: [RequestStatus.REVISION],
+};
 import { CreateRequestPropertyDto } from './dto/createRequestPropertyDto';
 import { NotificationService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
@@ -82,6 +92,14 @@ export class PropertyRequestService {
 
   async updateStatus(id: number, status: RequestStatus): Promise<PropertyRequest> {
     const request = await this.findOne(id);
+
+    // (ERROR_FIXES R-15): rechazar transiciones ilegales con un 409 claro
+    if (!VALID_TRANSITIONS[request.status]?.includes(status)) {
+      throw new ConflictException(
+        `No se puede pasar la solicitud de '${request.status}' a '${status}'`,
+      );
+    }
+
     request.status = status;
     const saved = await this.requestRepo.save(request);
 

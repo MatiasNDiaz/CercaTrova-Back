@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PropertyType } from './entities/typeOfProperty.entity'; 
+import { PropertyType } from './entities/typeOfProperty.entity';
+import { Property } from '../properties/entities/property.entity';
 import { CreateTypeOfPropertyDto } from './dto/create-type-of-property.dto';
 import { UpdateTypeOfPropertyDto } from './dto/update-type-of-property.dto';
 
@@ -10,6 +11,9 @@ export class TypeOfPropertyService {
   constructor(
     @InjectRepository(PropertyType)
     private readonly typeRepo: Repository<PropertyType>,
+
+    @InjectRepository(Property)
+    private readonly propertyRepo: Repository<Property>,
   ) {}
 
   async create(dto: CreateTypeOfPropertyDto) {
@@ -42,12 +46,21 @@ export class TypeOfPropertyService {
   }
 
   async remove(id: number) {
-    const result = await this.typeRepo.delete(id);
+    // 404 si el tipo no existe
+    await this.findOne(id);
 
-    if (result.affected === 0) {
-      throw new NotFoundException('Tipo de propiedad no encontrado.');
+    // (ERROR_FIXES): un tipo referenciado por properties no puede borrarse —
+    // antes la violación de FK salía como 500 crudo
+    const inUse = await this.propertyRepo.count({
+      where: { typeOfProperty: { id } },
+    });
+    if (inUse > 0) {
+      throw new ConflictException(
+        'No se puede eliminar: hay propiedades usando este tipo',
+      );
     }
 
+    await this.typeRepo.delete(id);
     return { message: 'Tipo de propiedad eliminado' };
   }
 }

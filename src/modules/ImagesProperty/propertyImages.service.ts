@@ -132,6 +132,12 @@ export class PropertyImagesService {
 
     if (!image) throw new NotFoundException('Imagen no encontrada');
 
+    // (ERROR_FIXES R-23): guard contra relación rota — antes reventaba con
+    // TypeError → 500 si la imagen quedó sin property asociada
+    if (!image.property) {
+      throw new NotFoundException('La imagen no tiene una propiedad asociada');
+    }
+
     const propertyId = image.property.id;
 
     // 1) Poner todas las imágenes de esa propiedad en false

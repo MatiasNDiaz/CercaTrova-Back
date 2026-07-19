@@ -31,6 +31,7 @@ async function bootstrap() {
   }));
   
   const bootstrapService = app.get(BootstrapService);
+  await bootstrapService.ensurePostgresExtensions();
   await bootstrapService.createDefaultAdmin();
   
   await app.listen(process.env.PORT ?? 3000);

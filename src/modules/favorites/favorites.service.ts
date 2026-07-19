@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateFavoriteDto } from './dto/create-favorite.dto';
+import { isUniqueViolation } from 'src/common/helpers/database-error.helper';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Property } from '../properties/entities/property.entity';
 import { User } from '../users/entities/user.entity';
@@ -36,7 +37,18 @@ export class FavoritesService {
     if (exists) throw new ConflictException('La propiedad ya está en favoritos');
 
     const newFavorite = this.favoriteRepo.create({ user, property, user_id, property_id });
-    const saved = await this.favoriteRepo.save(newFavorite);
+
+    let saved: Favorite;
+    try {
+      saved = await this.favoriteRepo.save(newFavorite);
+    } catch (error) {
+      // 🧱 PATRÓN unique violation → 409: dos POST simultáneos del mismo
+      // favorito chocan contra la PK compuesta (antes salía como 500)
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('La propiedad ya está en favoritos');
+      }
+      throw error;
+    }
 
     // 👇 Notificar al admin — no bloqueante
     this.notificationService

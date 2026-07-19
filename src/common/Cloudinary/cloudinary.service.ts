@@ -1,8 +1,10 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { UploadApiResponse, UploadApiErrorResponse, v2 as cloudinary } from 'cloudinary';
 
 @Injectable()
 export class CloudinaryService {
+  private readonly logger = new Logger(CloudinaryService.name);
+
   constructor(
     @Inject('Cloudinary') private cloudinary,
   ) {}
@@ -46,6 +48,15 @@ export class CloudinaryService {
 
 
   async deleteFile(publicId: string) {
-  return await this.cloudinary.uploader.destroy(publicId);
-}
+    // (ERROR_FIXES R-22): destroy() no lanza si el archivo no existe —
+    // devuelve { result: 'not found' }. Verificamos y logueamos el no-op
+    // en vez de asumir éxito en silencio.
+    const response = await this.cloudinary.uploader.destroy(publicId);
+    if (response?.result !== 'ok') {
+      this.logger.warn(
+        `Cloudinary no eliminó "${publicId}" (resultado: ${response?.result ?? 'desconocido'})`,
+      );
+    }
+    return response;
+  }
 }

@@ -29,10 +29,10 @@ export class CommentsService {
 
   async create(propertyId: number, userId: number, dto: CreateCommentDto) {
     const property = await this.propertyRepo.findOne({ where: { id: propertyId } });
-    if (!property) throw new NotFoundException('Property not found');
+    if (!property) throw new NotFoundException('La propiedad no existe');
 
     const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('El usuario no existe');
 
     const newComment = this.commentRepo.create({
       message: dto.message,
@@ -83,9 +83,9 @@ export class CommentsService {
       relations: ['user'],
     });
 
-    if (!comment) throw new NotFoundException('Comment not found');
+    if (!comment) throw new NotFoundException('El comentario no existe');
     if (comment.user.id !== userId)
-      throw new ForbiddenException('You cannot edit a comment that is not yours');
+      throw new ForbiddenException('No podés editar un comentario que no es tuyo');
 
     if (dto.message !== undefined) comment.message = dto.message;
 
@@ -98,11 +98,11 @@ export class CommentsService {
       relations: ['user'],
     });
 
-    if (!comment) throw new NotFoundException('Comment not found');
+    if (!comment) throw new NotFoundException('El comentario no existe');
     if (comment.user.id !== userId && !isAdmin)
-      throw new ForbiddenException('Not allowed to delete this comment');
+      throw new ForbiddenException('No tenés permiso para eliminar este comentario');
 
     await this.commentRepo.remove(comment);
-    return { message: 'Comment deleted successfully' };
+    return { message: 'Comentario eliminado correctamente' };
   }
 }

@@ -1,8 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Rating } from './entities/rating.entity';
+import { Property } from '../properties/entities/property.entity';
 import { Repository } from 'typeorm';
 import { NotificationService } from '../notifications/notifications.service'; // 👈
+import { ensureExists } from 'src/common/helpers/ensure-exists.helper';
+import { isUniqueViolation } from 'src/common/helpers/database-error.helper';
 
 @Injectable()
 export class RatingsService {
@@ -10,12 +13,19 @@ export class RatingsService {
     @InjectRepository(Rating)
     private readonly ratingRepo: Repository<Rating>,
 
+    @InjectRepository(Property)
+    private readonly propertyRepo: Repository<Property>,
+
     private readonly notificationService: NotificationService, // 👈
   ) {}
 
   async rateProperty(userId: number, propertyId: number, score: number) {
     if (score < 1 || score > 5)
       throw new BadRequestException('El puntaje debe ser entre 1 y 5');
+
+    // 🧱 PATRÓN ensureExists: sin esto, valorar una property inexistente
+    // violaba la FK y salía como 500 en vez de 404
+    await ensureExists(this.propertyRepo, propertyId, 'La propiedad indicada');
 
     const existingRating = await this.ratingRepo.findOne({
       where: { user: { id: userId }, property: { id: propertyId } },
@@ -46,7 +56,17 @@ export class RatingsService {
       property: { id: propertyId },
     });
 
-    const saved = await this.ratingRepo.save(rating);
+    let saved: Rating;
+    try {
+      saved = await this.ratingRepo.save(rating);
+    } catch (error) {
+      // 🧱 PATRÓN unique violation → 409: dos requests simultáneas del mismo
+      // usuario chocan contra la constraint unique(userId, propertyId)
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Ya valoraste esta propiedad');
+      }
+      throw error;
+    }
 
     // 👇 Fetch con relaciones para obtener los nombres
     const full = await this.ratingRepo.findOne({

@@ -1,6 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { handleServiceError } from 'src/common/helpers/handle-service-error.helper';
+import { isUniqueViolation } from 'src/common/helpers/database-error.helper';
+import { ensureExists } from 'src/common/helpers/ensure-exists.helper';
+import { ConflictException, BadGatewayException } from '@nestjs/common';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -11,6 +15,8 @@ import { Role } from './enums/role.enum';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -27,7 +33,17 @@ export class UsersService {
     if (!file) throw new BadRequestException('No se proporcionó ninguna imagen');
 
     // 1. Subir a Cloudinary con el ID del usuario
-    const result = await this.cloudinaryService.uploadProfilePhoto(file, id);
+    // (ERROR_FIXES R-19): fallo del servicio externo → 502 honesto, no 500
+    let result;
+    try {
+      result = await this.cloudinaryService.uploadProfilePhoto(file, id);
+    } catch (error) {
+      this.logger.error(
+        `Cloudinary falló al subir la foto de perfil del usuario ${id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new BadGatewayException('No pudimos procesar la imagen, intentá de nuevo');
+    }
 
     // 2. Guardar la URL en la propiedad 'photo' de la entidad
     user.photo = result.secure_url;
@@ -70,9 +86,15 @@ export class UsersService {
       return saved;
 
     } catch (error) {
-      throw new BadRequestException(
-        'No se pudo crear el usuario: ' + error.message,
-      );
+      // 🔒 SEGURIDAD (B1): si dos registros simultáneos chocan en la
+      // constraint unique del email, respondemos el MISMO mensaje genérico
+      // del pre-check — sin revelar que el email existe
+      if (isUniqueViolation(error)) {
+        throw new BadRequestException('No se pudo completar el registro. Verificá los datos ingresados.');
+      }
+      // 🧱 PATRÓN: nunca concatenar error.message al cliente; las
+      // HttpException construidas a propósito se re-lanzan tal cual
+      handleServiceError(this.logger, error, 'No se pudo crear el usuario');
     }
   }
 
@@ -81,64 +103,82 @@ export class UsersService {
     try {
       return await this.userRepository.find();
     } catch (error) {
-      throw new BadRequestException(
-        'No se pudo obtener la lista de usuarios: ' + error.message,
-      );
+      handleServiceError(this.logger, error, 'No se pudo obtener la lista de usuarios');
     }
   }
 
   // Obtener por ID
   async getUserById(id: number): Promise<User> {
     try {
-      const user = await this.userRepository.findOneBy({ id });
-      if (!user) throw new BadRequestException('Usuario no encontrado');
-      return user;
+      // 🧱 PATRÓN ensureExists: usuario inexistente → 404 (antes era 400)
+      return await ensureExists(this.userRepository, id, 'El usuario');
     } catch (error) {
-      throw new BadRequestException('Error al buscar usuario: ' + error.message);
+      handleServiceError(this.logger, error, 'No se pudo buscar el usuario');
     }
   }
 
   // Actualizar usuario
   async updateUser(id: number, updateUserDto: UpdateUserDto): Promise<User> {
-    const user = await this.userRepository.findOneBy({ id });
-    
-    if (!user) throw new BadRequestException('Usuario no encontrado');
-// 🔒 SEGURIDAD: Si viene password en el Body, la hasheamos antes de pisar el objeto
-    if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-      // 🔒 SEGURIDAD (punto 15): cambiar el password revoca todas las
-      // sesiones activas del usuario
-      user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+    try {
+      // 🧱 PATRÓN ensureExists: usuario inexistente → 404 (antes era 400)
+      const user = await ensureExists(this.userRepository, id, 'El usuario');
+
+      // 🔒 SEGURIDAD: Si viene password en el Body, la hasheamos antes de pisar el objeto
+      if (updateUserDto.password) {
+        updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+        // 🔒 SEGURIDAD (punto 15): cambiar el password revoca todas las
+        // sesiones activas del usuario
+        user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+      }
+
+      // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
+      Object.assign(user, updateUserDto);
+
+      // (F8): si un usuario de Google completa su perfil (define contraseña
+      // local y tiene teléfono), se limpia el flag
+      if (user.profileIncomplete && updateUserDto.password && user.phone) {
+        user.profileIncomplete = false;
+      }
+
+      return await this.userRepository.save(user);
+    } catch (error) {
+      // 🧱 PATRÓN unique violation → 409: el único unique de la entidad es
+      // el email; si el update lo pisa con uno ya usado, respondemos claro
+      // (sin revelar de quién es)
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Ese email no está disponible');
+      }
+      handleServiceError(this.logger, error, 'No se pudo actualizar el usuario');
     }
-
-    // Usamos Object.assign para actualizar solo los campos que vienen en el DTO
-    Object.assign(user, updateUserDto);
-
-    // (F8): si un usuario de Google completa su perfil (define contraseña
-    // local y tiene teléfono), se limpia el flag
-    if (user.profileIncomplete && updateUserDto.password && user.phone) {
-      user.profileIncomplete = false;
-    }
-
-    return await this.userRepository.save(user);
   }
 
   // Eliminar usuario
 async deleteUser(id: number): Promise<void> {
-  // 1. Verificar que existe
-  const user = await this.userRepository.findOneBy({ id });
-  if (!user) throw new BadRequestException('Usuario no encontrado');
+  try {
+    // 1. Verificar que existe — 🧱 ensureExists: inexistente → 404 (antes 400)
+    const user = await ensureExists(this.userRepository, id, 'El usuario');
 
-  // 2. Borrar sus property_requests primero
-  await this.propertyRequestRepository.delete({ userId: id });
+    // 2. Borrar sus property_requests primero
+    await this.propertyRequestRepository.delete({ userId: id });
 
-  // 3. Ahora sí borrar el usuario
-  await this.userRepository.delete(id);
+    // 3. Ahora sí borrar el usuario
+    await this.userRepository.delete(id);
 
-  // 4. Limpiar foto de Cloudinary
-  if (user.photo) {
-    const publicId = `userPhotoProfile/user_${id}`;
-    await this.cloudinaryService.deleteFile(publicId);
+    // 4. Limpiar foto de Cloudinary — best-effort (ERROR_FIXES R-18): el
+    // usuario YA se borró; un fallo acá no debe devolver error al cliente
+    if (user.photo) {
+      const publicId = `userPhotoProfile/user_${id}`;
+      try {
+        await this.cloudinaryService.deleteFile(publicId);
+      } catch (cleanupError) {
+        this.logger.error(
+          `No se pudo limpiar la foto de perfil ${publicId} en Cloudinary`,
+          cleanupError instanceof Error ? cleanupError.stack : String(cleanupError),
+        );
+      }
+    }
+  } catch (error) {
+    handleServiceError(this.logger, error, 'No se pudo eliminar el usuario');
   }
 }
 

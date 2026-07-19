@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register-auth.dto';
 import { LoginDto } from './dto/login-auth.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { setAuthCookie, clearAuthCookie } from './auth-cookie.helper';
@@ -31,8 +32,8 @@ export class AuthController {
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('google')
-  async googleLogin(@Body('idToken') idToken: string, @Res({ passthrough: true }) res: Response) {
-    const { token, user } = await this.authService.googleLogin(idToken);
+  async googleLogin(@Body() body: GoogleLoginDto, @Res({ passthrough: true }) res: Response) {
+    const { token, user } = await this.authService.googleLogin(body.idToken);
     setAuthCookie(res, token);
     return { message: 'Login con Google exitoso', user };
   }

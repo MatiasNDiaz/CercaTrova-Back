@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
@@ -40,18 +40,20 @@ export class AuthService {
   }
 
   async login(loginData: LoginDto) {
+    // (ERROR_FIXES R-25): login fallido es 401 (Unauthorized), no 400 —
+    // mismo mensaje genérico anti-enumeración en los tres casos
     // 🔒 SEGURIDAD (C8): única query del sistema que carga el hash del password
     const userExist = await this.userService.findUserByEmailWithPassword(loginData.email);
-    if (!userExist) throw new BadRequestException('Credenciales inválidas');
+    if (!userExist) throw new UnauthorizedException('Credenciales inválidas');
 
     // 🔒 SEGURIDAD (B1): usuario de Google sin contraseña local — mismo
     // mensaje genérico para no revelar el método de registro de un email ajeno
     if (!userExist.password) {
-      throw new BadRequestException('Credenciales inválidas');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(loginData.password, userExist.password);
-    if (!isPasswordValid) throw new BadRequestException('Credenciales inválidas');
+    if (!isPasswordValid) throw new UnauthorizedException('Credenciales inválidas');
 
     // 🔒 SEGURIDAD (punto 15): el JWT incluye tokenVersion para revocación
     const payload = {

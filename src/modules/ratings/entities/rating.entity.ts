@@ -1,7 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Property } from '../../properties/entities/property.entity';
 
+// (ERROR_FIXES R-13): un usuario solo puede tener UNA valoración por
+// propiedad — la constraint frena a nivel DB los duplicados por carrera
+// que el findOne del service no puede evitar (verificado: sin duplicados
+// preexistentes en la DB antes de agregarla)
+@Unique(['userId', 'propertyId'])
 @Entity('ratings')
 export class Rating {
   @PrimaryGeneratedColumn()

@@ -1,6 +1,6 @@
 // src/modules/users/dto/create-user.dto.ts
 import { Transform } from 'class-transformer';
-import { IsString, IsEmail, IsOptional } from 'class-validator';
+import { IsString, IsEmail, IsOptional, MinLength } from 'class-validator';
 
 export class CreateUserDto {
 
@@ -28,6 +28,7 @@ export class CreateUserDto {
   
   @Transform(({ value }) => value?.trim())
   @IsString()
+  @MinLength(5) // (ERROR_FIXES): igualado a RegisterDto — antes aceptaba cualquier largo
   password: string;
 
   // 🔒 SEGURIDAD (C1): el campo `role` fue eliminado de este DTO.

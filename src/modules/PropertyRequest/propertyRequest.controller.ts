@@ -13,12 +13,12 @@ import {
 } from '@nestjs/common';
 import { PropertyRequestService } from './propertyRequest.service';
 import { CreateRequestPropertyDto } from './dto/createRequestPropertyDto';
+import { UpdateRequestStatusDto } from './dto/updateRequestStatusDto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; 
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from '../users/enums/role.enum';
-import { RequestStatus } from './entities/PropertyRequest';
 
 @Controller('property-requests')
 @UseGuards(JwtAuthGuard) // Protección global para este controlador
@@ -80,9 +80,9 @@ export class PropertyRequestController {
   @UseGuards(RolesGuard)
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
-    @Body('status') status: RequestStatus, 
+    @Body() dto: UpdateRequestStatusDto,
   ) {
-    return this.service.updateStatus(id, status);
+    return this.service.updateStatus(id, dto.status);
   }
 
   /**

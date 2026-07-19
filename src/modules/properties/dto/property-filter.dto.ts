@@ -83,8 +83,12 @@ export class PropertyFilterDto {
   property_deed?: string; // Para el campo property_deed de la entidad
 
   // --- ESTADO ---
+  // (ERROR_FIXES R-21): antes era @IsString() y un valor inválido devolvía
+  // una lista vacía en silencio — ahora responde 400 claro
   @IsOptional()
-  @IsString()
+  @IsEnum(StatusProperty, {
+    message: `status inválido. Valores permitidos: ${Object.values(StatusProperty).join(', ')}`,
+  })
   status?: StatusProperty;
 
   @IsOptional()

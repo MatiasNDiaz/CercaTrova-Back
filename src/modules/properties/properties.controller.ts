@@ -19,6 +19,7 @@ import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Public } from 'src/common/decorators/public.decorator';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from '../users/enums/role.enum';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
@@ -62,8 +63,10 @@ export class PropertiesController {
   async create(
     @Body('data', new JsonToDtoPipe(CreatePropertyDto)) dto: CreatePropertyDto,
     @UploadedFiles() images: MulterFile[],
+    // (ERROR_FIXES R-27): el agente sale del token del admin que crea
+    @GetUser('id') agentId: number,
   ) {
-    return this.propertiesService.createWithImages(dto, images);
+    return this.propertiesService.createWithImages(dto, images, agentId);
   }
 
   // PATCH: actualizar campos de property, borrar imágenes y subir nuevas (delegado)

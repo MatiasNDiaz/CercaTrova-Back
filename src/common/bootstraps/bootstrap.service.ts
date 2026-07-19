@@ -14,6 +14,27 @@ export class BootstrapService {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  // Asegura la extensión "unaccent" de Postgres, usada por los ILIKE
+  // unaccent(...) de PropertiesService.filter(). Sin esto, cualquier
+  // filtro de texto (barrio/localidad/provincia/zone/búsqueda libre)
+  // revienta con error SQL en una DB nueva donde nadie la haya activado
+  // a mano. No es fatal si falla: si el usuario de conexión no tiene
+  // privilegios para crear extensiones (común en hosting gestionado),
+  // se loguea un aviso claro y la app sigue arrancando — la extensión
+  // queda como paso manual de setup en ese caso (ver CLAUDE.md).
+  async ensurePostgresExtensions() {
+    try {
+      await this.userRepo.manager.query('CREATE EXTENSION IF NOT EXISTS unaccent;');
+      this.logger.log('✅ Extensión "unaccent" de Postgres verificada/creada');
+    } catch (error) {
+      this.logger.warn(
+        '⚠️ No se pudo crear la extensión "unaccent" (probablemente el usuario de la DB no tiene privilegios). ' +
+        'Los filtros de búsqueda por texto (barrio/localidad/provincia/zone/search) van a fallar hasta que un ' +
+        'superusuario la active manualmente con: CREATE EXTENSION IF NOT EXISTS unaccent;',
+      );
+    }
+  }
+
   async createDefaultAdmin() {
     const name = process.env.ADMIN_NAME;
     const surname = process.env.ADMIN_SURNAME; // 👈 campo obligatorio

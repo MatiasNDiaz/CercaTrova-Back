@@ -16,6 +16,8 @@ export class StatsService {
 
   async propertyTypeDemand() {
     const total = await this.repo.count();
+    // Guard división por cero: sin datos no hay porcentajes que calcular
+    if (total === 0) return [];
 
     return this.repo
       .createQueryBuilder('u')
@@ -51,6 +53,8 @@ export class StatsService {
 
   async operationTypeDemand() {
     const total = await this.repo.count();
+    // Guard división por cero
+    if (total === 0) return [];
 
     return this.repo
       .createQueryBuilder('u')
@@ -86,6 +90,8 @@ export class StatsService {
 
   async demandByZone() {
     const total = await this.repo.count();
+    // Guard división por cero
+    if (total === 0) return [];
 
     return this.repo
       .createQueryBuilder('u')
@@ -99,13 +105,16 @@ export class StatsService {
 
   async demandByCity() {
     const total = await this.repo.count();
+    // Guard división por cero
+    if (total === 0) return [];
 
+    // FIX: la columna se llama "localidad" — "city" no existe y tiraba 500
     return this.repo
       .createQueryBuilder('u')
-      .select('"u"."city"', 'city')
+      .select('"u"."localidad"', 'localidad')
       .addSelect('COUNT(*)', 'count')
       .addSelect(`ROUND(COUNT(*) * 100.0 / ${total}, 2)`, 'percentage')
-      .groupBy('"u"."city"')
+      .groupBy('"u"."localidad"')
       .orderBy('count', 'DESC')
       .getRawMany();
   }
@@ -141,7 +150,7 @@ export class StatsService {
         CASE 
           WHEN ("priceMin" + "priceMax") / 2 < 80000 THEN 'Menos de 80k'
           WHEN ("priceMin" + "priceMax") / 2 BETWEEN 80000 AND 120000 THEN '80k - 120k'
-          WHEN ("priceMin" + "priceMax") / 2 BETWEEN 120k AND 200k THEN '120k - 200k'
+          WHEN ("priceMin" + "priceMax") / 2 BETWEEN 120000 AND 200000 THEN '120k - 200k'
           ELSE 'Más de 200k'
         END AS range,
         COUNT(*) AS count
@@ -191,6 +200,8 @@ export class StatsService {
 
   async roomsDistribution() {
     const total = await this.repo.count();
+    // Guard división por cero
+    if (total === 0) return [];
 
     return this.repo
       .createQueryBuilder('u')
@@ -204,6 +215,12 @@ export class StatsService {
 
   async extrasUsage() {
     const total = await this.repo.count();
+    // Guard división por cero: devolvemos ceros con la misma forma de respuesta
+    if (total === 0) {
+      return [
+        { garagecount: 0, garagepercentage: 0, patiocount: 0, patiopercentage: 0 },
+      ];
+    }
 
     return this.repo.query(`
       SELECT
@@ -221,20 +238,25 @@ export class StatsService {
   // ----------------------------------------
 
   async averageAntiquity() {
+    // FIX: la entidad solo tiene "antiquityMax" — "antiquityMin" no existe
+    // y la query anterior tiraba 500
     return this.repo
       .createQueryBuilder('u')
-      .select('AVG(("u"."antiquityMin" + "u"."antiquityMax") / 2)', 'avgAntiquity')
+      .select('AVG("u"."antiquityMax")', 'avgAntiquity')
       .getRawOne();
   }
 
   async newConstructionInterest() {
     const total = await this.repo.count();
+    // Guard división por cero
+    if (total === 0) return { count: 0, percentage: 0 };
 
+    // FIX: "antiquityMin" no existe en la entidad — solo "antiquityMax"
     return this.repo
       .createQueryBuilder('u')
       .select('COUNT(*)', 'count')
       .addSelect(`ROUND(COUNT(*) * 100.0 / ${total}, 2)`, 'percentage')
-      .where('"u"."antiquityMin" = 0 OR "u"."antiquityMax" = 0')
+      .where('"u"."antiquityMax" = 0')
       .getRawOne();
   }
 }
