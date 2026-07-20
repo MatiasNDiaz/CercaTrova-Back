@@ -1,7 +1,7 @@
 // src/modules/users/users.controller.ts
-import { 
-  Controller, Get, Post, Patch, Delete, Body, Param, 
-  UseInterceptors, UploadedFile, UseGuards, Request, ForbiddenException 
+import {
+  Controller, Get, Post, Patch, Delete, Body, Param,
+  UseInterceptors, UploadedFile, UseGuards, Request, ForbiddenException, Res
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -14,6 +14,8 @@ import { RolesGuard } from 'src/common/guards/roles.guard'; // Ajustá la ruta
 import { Roles } from 'src/common/decorators/roles.decorator'; // Ajustá la ruta
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from './enums/role.enum';
+import { clearAuthCookie } from '../auth/auth-cookie.helper';
+import type { Response } from 'express';
 
 @Controller('users')
 export class UsersController {
@@ -65,8 +67,16 @@ export class UsersController {
   async updateOwnProfile(
     @GetUser('id') userId: number,
     @Body() updateUserDto: UpdateUserDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<User> {
-    return this.usersService.updateUser(userId, updateUserDto);
+    const updated = await this.usersService.updateUser(userId, updateUserDto);
+    // Cambiar el password revoca la sesión (tokenVersion++) — esta misma
+    // respuesta todavía viaja con el token viejo, así que la limpiamos acá
+    // en vez de dejar que el cliente se entere recién con un 401 en el
+    // próximo request (ver nota en updateUser() más abajo sobre por qué
+    // esto no aplica cuando quien edita es un ADMIN sobre otro usuario).
+    if (updateUserDto.password) clearAuthCookie(res);
+    return updated;
   }
 
   // 5.b Actualizar Datos: Solo el dueño de la cuenta o Admin
@@ -76,11 +86,21 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @Request() req,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<User> {
-    if (req.user.id !== Number(id) && req.user.role !== Role.ADMIN) {
+    const isSelf = req.user.id === Number(id);
+    if (!isSelf && req.user.role !== Role.ADMIN) {
       throw new ForbiddenException('No tienes permiso para actualizar este usuario');
     }
-    return this.usersService.updateUser(Number(id), updateUserDto);
+    const updated = await this.usersService.updateUser(Number(id), updateUserDto);
+    // Solo limpiamos la cookie de ESTA respuesta si quien llamó es el mismo
+    // usuario que cambió su password (isSelf). Si es un ADMIN editando la
+    // cuenta de otro, la cookie que viajaría acá es la del ADMIN — limpiarla
+    // cerraría la sesión del admin, no la del usuario afectado (esa sesión
+    // vive en otro navegador al que esta response no tiene acceso; su token
+    // ya quedó revocado igual por el tokenVersion++ del service).
+    if (isSelf && updateUserDto.password) clearAuthCookie(res);
+    return updated;
   }
 
   // 6. Eliminar: Solo ADMIN
