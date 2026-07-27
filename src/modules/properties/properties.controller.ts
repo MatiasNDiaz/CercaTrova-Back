@@ -57,15 +57,29 @@ export class PropertiesController {
   // Crear propiedad + imágenes
   // 🔒 SEGURIDAD (M4): el campo 'data' pasa por JsonToDtoPipe — el DTO se
   // valida con class-validator en vez del JSON.parse() manual sin control
+  //
+  // ⚠️ BUGFIX (multipart 400): el parámetro se tipa como `string` A PROPÓSITO.
+  // El ValidationPipe GLOBAL (main.ts, transform:true) corre ANTES que los pipes
+  // de parámetro. Si el metatype es `CreatePropertyDto`, el pipe global intenta
+  // validar el STRING crudo del campo multipart 'data' como si ya fuera el DTO
+  // (plainToInstance sobre un string → instancia vacía) y devuelve
+  // "title should not be empty · description should not be empty · …" para TODOS
+  // los campos, aunque el JSON venga completo — y JsonToDtoPipe nunca llegaba a
+  // parsear. Al declarar el metatype como primitivo (`string`), el pipe global
+  // lo ignora (toValidate() saltea String/Number/Boolean/Array/Object) y
+  // JsonToDtoPipe queda como ÚNICO validador: parsea el JSON y valida con las
+  // mismas reglas (whitelist + forbidNonWhitelisted). Devuelve una instancia
+  // real de CreatePropertyDto en runtime; el cast solo alinea el tipo estático.
   @Roles(Role.ADMIN)
   @Post()
   @UseInterceptors(FilesInterceptor('images', 10, imageUploadOptions))
   async create(
-    @Body('data', new JsonToDtoPipe(CreatePropertyDto)) dto: CreatePropertyDto,
+    @Body('data', new JsonToDtoPipe(CreatePropertyDto)) rawDto: string,
     @UploadedFiles() images: MulterFile[],
     // (ERROR_FIXES R-27): el agente sale del token del admin que crea
     @GetUser('id') agentId: number,
   ) {
+    const dto = rawDto as unknown as CreatePropertyDto;
     return this.propertiesService.createWithImages(dto, images, agentId);
   }
 
@@ -75,9 +89,12 @@ export class PropertiesController {
   @UseInterceptors(FilesInterceptor('newImages', 10, imageUploadOptions))
   async update(
     @Param('id') id: string,
-    @Body('data', new JsonToDtoPipe(UpdatePropertyDto)) dto: UpdatePropertyDto,
+    // Mismo bugfix que en create(): `string` para que el ValidationPipe global no
+    // pise el campo 'data'; JsonToDtoPipe parsea+valida y devuelve el DTO real.
+    @Body('data', new JsonToDtoPipe(UpdatePropertyDto)) rawDto: string,
     @UploadedFiles() newImages: MulterFile[],
   ) {
+    const dto = rawDto as unknown as UpdatePropertyDto;
     return this.propertiesService.update(
       +id,
       dto,

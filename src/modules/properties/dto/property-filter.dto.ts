@@ -1,9 +1,27 @@
 // src/modules/properties/dto/property-filter.dto.ts
 import { Type } from 'class-transformer';
-import { IsOptional, IsInt, IsBooleanString, IsString, Min, Max, IsEnum } from 'class-validator';
+import { IsOptional, IsInt, IsBooleanString, IsString, Min, Max, IsEnum, IsIn } from 'class-validator';
 import { OperationType, StatusProperty } from './enumsStatusProperty';
 
+// Campos por los que el catálogo puede ordenar. `date` = fecha de publicación
+// (created_at), `rating` = promedio de valoraciones (subconsulta AVG).
+export enum PropertySortBy {
+  PRICE = 'price',
+  ANTIQUITY = 'antiquity',
+  DATE = 'date',
+  RATING = 'rating',
+}
+
 export class PropertyFilterDto {
+  // --- ORDENAMIENTO ---
+  @IsOptional()
+  @IsEnum(PropertySortBy)
+  sortBy?: PropertySortBy;
+
+  @IsOptional()
+  @IsIn(['ASC', 'DESC'])
+  order?: 'ASC' | 'DESC';
+
   // --- PAGINACIÓN (Clave para un Senior) ---
   @IsOptional()
   @Type(() => Number)

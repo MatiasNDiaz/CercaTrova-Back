@@ -58,7 +58,7 @@ export class PropertiesService {
           .leftJoin('property.ratings', 'rating')
           .select('AVG(rating.score)', 'avg')
           .where('property.id = :id', { id: p.id })
-          .getRawOne();
+            .getRawOne();
           
           return { ...p, ratingAverage: Number(avg) || 0 };
         }),
@@ -353,7 +353,9 @@ async filter(filters: PropertyFilterDto) {
     zone,
     maxAntiquity,
     minM2,
-    maxM2
+    maxM2,
+    sortBy,
+    order,
   } = filters;
 
   const skip = (page - 1) * limit;
@@ -496,9 +498,33 @@ async filter(filters: PropertyFilterDto) {
   qb.andWhere('p.status = :status', { status: status || StatusProperty.DISPONIBLE });
 
   // Paginación y Orden
-  qb.orderBy('p.created_at', 'DESC')
-    .skip(skip)
-    .take(limit);
+  // El `order` viene del catálogo (ASC/DESC). El default sin `sortBy` sigue
+  // siendo created_at DESC (más recientes primero), igual que antes.
+  const dir: 'ASC' | 'DESC' = order === 'ASC' ? 'ASC' : 'DESC';
+  switch (sortBy) {
+    case 'price':
+      qb.orderBy('p.price', dir);
+      break;
+    case 'antiquity':
+      qb.orderBy('p.antiquity', dir);
+      break;
+    case 'rating':
+      // Promedio de valoraciones vía subconsulta correlacionada. Se expone como
+      // columna con alias (`addSelect`) y se ordena por el alias: con la
+      // paginación DISTINCT de TypeORM (por el join one-to-many de imágenes),
+      // ordenar por una subconsulta cruda tira "alias not found" — el alias
+      // seleccionado sí lo resuelve.
+      qb.addSelect(
+        '(SELECT COALESCE(AVG(r.score), 0) FROM ratings r WHERE r."propertyId" = p.id)',
+        'avgscore',
+      ).orderBy('avgscore', dir);
+      break;
+    case 'date':
+    default:
+      qb.orderBy('p.created_at', dir);
+      break;
+  }
+  qb.skip(skip).take(limit);
 
   const [items, total] = await qb.getManyAndCount();
 
