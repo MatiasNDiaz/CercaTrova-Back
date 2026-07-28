@@ -35,9 +35,18 @@ export class CreateSearchPreferenceDto {
   @IsEnum(OperationType)
   operationType?: OperationType;
 
+  // Documentación legal: independientes entre sí (pueden convivir)
   @IsOptional()
   @IsBoolean()
   property_deed?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tractoAbreviado?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  boleto?: boolean;
 
   @IsOptional()
   @Type(() => Number)
@@ -68,7 +77,12 @@ export class CreateSearchPreferenceDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  m2?: number;
+  supTotal?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  supCubierta?: number;
 
   // ---------------------------
   // ANTIGÜEDAD (NUEVO)

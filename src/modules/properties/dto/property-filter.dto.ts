@@ -75,12 +75,22 @@ export class PropertyFilterDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  minM2?: number;
+  minSupTotal?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  maxM2?: number;
+  maxSupTotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  minSupCubierta?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  maxSupCubierta?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -99,6 +109,14 @@ export class PropertyFilterDto {
   @IsOptional()
   @IsBooleanString()
   property_deed?: string; // Para el campo property_deed de la entidad
+
+  @IsOptional()
+  @IsBooleanString()
+  tractoAbreviado?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  boleto?: string;
 
   // --- ESTADO ---
   // (ERROR_FIXES R-21): antes era @IsString() y un valor inválido devolvía
@@ -125,6 +143,10 @@ export class PropertyFilterDto {
   @IsOptional()
   @IsString()
   barrio?: string;
+
+  @IsOptional()
+  @IsString()
+  direccion?: string;
 
   // En property-filter.dto.ts
   @IsOptional()

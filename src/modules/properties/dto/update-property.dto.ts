@@ -43,11 +43,24 @@ export class UpdatePropertyDto {
 
   @IsOptional()
   @IsString()
+  direccion?: string;
+
+  @IsOptional()
+  @IsString()
   zone?: string;
 
+  // Documentación legal: independientes entre sí (pueden convivir)
   @IsOptional()
   @IsBoolean()
   property_deed?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tractoAbreviado?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  boleto?: boolean;
 
   @IsOptional()
   @Type(() => Number)
@@ -85,7 +98,13 @@ export class UpdatePropertyDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
-  m2?: number;
+  supTotal?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  supCubierta?: number;
 
   @IsOptional()
   @IsEnum(StatusProperty)

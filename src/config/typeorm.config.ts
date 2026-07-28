@@ -27,6 +27,9 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
     entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat, FailedEmail],
+    // Migraciones (se corren con `npm run migration:run`, nunca automáticamente).
+    // El glob cubre tanto el código fuente (.ts en dev) como el build (.js en prod).
+    migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     // 🔒 SEGURIDAD (M10): synchronize NUNCA en producción — puede dropear
     // columnas con datos reales al renombrar entidades. Antes de deployar
     // a producción hay que generar migrations de TypeORM (ver

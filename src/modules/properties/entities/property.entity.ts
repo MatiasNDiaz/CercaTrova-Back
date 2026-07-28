@@ -28,7 +28,12 @@ export class Property {
 
     @Column()
     barrio!: string;    // Ej: "La Cuesta"
-    
+
+    // Dirección exacta (calle y número) — es la fuente del mapa en el detalle.
+    // Nullable para no romper las propiedades ya cargadas antes de este campo.
+    @Column({ nullable: true })
+    direccion!: string; // Ej: "Av. San Martín 1250"
+
     @Column()
     zone!: string;
 
@@ -38,8 +43,16 @@ export class Property {
     @Column()
     bathrooms!: number;
 
+    // Documentación legal: los tres son independientes entre sí — una propiedad
+    // puede tener cualquier combinación de escritura, tracto abreviado y boleto.
     @Column({ default: false })
     property_deed!: boolean;
+
+    @Column({ default: false })
+    tractoAbreviado!: boolean;
+
+    @Column({ default: false })
+    boleto!: boolean;
 
     @Column()
     garage!: boolean;
@@ -48,7 +61,10 @@ export class Property {
     patio!: boolean;
 
     @Column({ type: 'int', nullable: true })
-    m2!: number;
+    supTotal!: number;
+
+    @Column({ type: 'int', nullable: true })
+    supCubierta!: number;
 
     @Column()
     antiquity!: number;

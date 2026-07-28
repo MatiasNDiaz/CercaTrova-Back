@@ -27,8 +27,17 @@ export class CreatePropertyDto {
   @IsNotEmpty()
   operationType!: OperationType;
 
+  // Documentación legal: independientes entre sí (pueden convivir)
   @IsBoolean()
   property_deed!: boolean;
+
+  @Type(() => Boolean)
+  @IsBoolean()
+  tractoAbreviado!: boolean;
+
+  @Type(() => Boolean)
+  @IsBoolean()
+  boleto!: boolean;
 
   @IsString()
   @IsNotEmpty()
@@ -41,6 +50,10 @@ export class CreatePropertyDto {
   @IsString()
   @IsNotEmpty()
   barrio!: string;    // Ej: "La Cuesta"
+
+  @IsString()
+  @IsNotEmpty()
+  direccion!: string; // Ej: "Av. San Martín 1250"
 
   @IsString()
   @IsNotEmpty()
@@ -64,7 +77,11 @@ export class CreatePropertyDto {
   
   @Type(() => Number)
   @IsNumber()
-  m2!: number;
+  supTotal!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  supCubierta!: number;
 
   @Type(() => Number)
   @IsNumber()

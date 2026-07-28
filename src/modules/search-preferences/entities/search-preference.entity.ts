@@ -42,8 +42,15 @@ export class SearchPreference {
   @JoinColumn({ name: 'typeOfPropertyId' })
   typeOfProperty: PropertyType;
 
+  // Documentación legal: mismos tres criterios independientes que Property
   @Column({ nullable: true })
   property_deed: boolean;
+
+  @Column({ nullable: true })
+  tractoAbreviado: boolean;
+
+  @Column({ nullable: true })
+  boleto: boolean;
 
   @Column({ nullable: true })
   preferredPrice: number;
@@ -55,7 +62,10 @@ export class SearchPreference {
   minBathrooms: number;
 
   @Column({ nullable: true })
-  m2: number;
+  supTotal: number;
+
+  @Column({ nullable: true })
+  supCubierta: number;
 
   @Column({ nullable: true })
   garage: boolean;

@@ -347,13 +347,18 @@ async filter(filters: PropertyFilterDto) {
     patio,
     operationType,
     barrio,
+    direccion,
     property_deed,
+    tractoAbreviado,
+    boleto,
     localidad,
     provincia,
     zone,
     maxAntiquity,
-    minM2,
-    maxM2,
+    minSupTotal,
+    maxSupTotal,
+    minSupCubierta,
+    maxSupCubierta,
     sortBy,
     order,
   } = filters;
@@ -392,10 +397,12 @@ async filter(filters: PropertyFilterDto) {
     }
 
     // C) EXTRAER METROS CUADRADOS
+    // El lenguaje natural del usuario sigue siendo "metros"/"m2" (no cambia la UX
+    // de búsqueda), pero el campo contra el que se filtra ahora es supTotal.
     const m2Match = s.match(/(\d+)\s*(metros cuadrados|metro cuadrado|metros|metro|mts|mt|m2)/i);
     if (m2Match) {
       const metros = parseInt(m2Match[1]);
-      qb.andWhere('p.m2 BETWEEN :mMin AND :mMax', { mMin: metros * 0.9, mMax: metros * 1.1 });
+      qb.andWhere('p.supTotal BETWEEN :mMin AND :mMax', { mMin: metros * 0.9, mMax: metros * 1.1 });
       s = s.replace(m2Match[0], '');
     }
 
@@ -458,12 +465,15 @@ async filter(filters: PropertyFilterDto) {
   if (operationType) qb.andWhere('p.operationType = :opType', { opType: operationType });
   if (minPrice) qb.andWhere('p.price >= :minPrice', { minPrice });
   if (maxPrice) qb.andWhere('p.price <= :maxPrice', { maxPrice });
-  if (minM2) qb.andWhere('p.m2 >= :minM2', { minM2 });
-  if (maxM2) qb.andWhere('p.m2 <= :maxM2', { maxM2 });
+  if (minSupTotal) qb.andWhere('p.supTotal >= :minSupTotal', { minSupTotal });
+  if (maxSupTotal) qb.andWhere('p.supTotal <= :maxSupTotal', { maxSupTotal });
+  if (minSupCubierta) qb.andWhere('p.supCubierta >= :minSupCubierta', { minSupCubierta });
+  if (maxSupCubierta) qb.andWhere('p.supCubierta <= :maxSupCubierta', { maxSupCubierta });
   if (maxAntiquity) qb.andWhere('p.antiquity <= :maxAntiquity', { maxAntiquity });
 
   // Ubicación Manual
   if (barrio) qb.andWhere('unaccent(p.barrio) ILIKE unaccent(:barrio)', { barrio: `%${barrio}%` });
+  if (direccion) qb.andWhere('unaccent(p.direccion) ILIKE unaccent(:direccion)', { direccion: `%${direccion}%` });
   if (localidad) qb.andWhere('unaccent(p.localidad) ILIKE unaccent(:localidad)', { localidad: `%${localidad}%` });
   if (provincia) qb.andWhere('unaccent(p.provincia) ILIKE unaccent(:provincia)', { provincia: `%${provincia}%` });
   if (zone) qb.andWhere('unaccent(p.zone) ILIKE unaccent(:zone)', {zone: `%${zone}%`,});
@@ -482,6 +492,16 @@ async filter(filters: PropertyFilterDto) {
   const hasDeed = String(property_deed) === 'true';
   qb.andWhere('p.property_deed = :hasDeed', { hasDeed });
 }
+
+  if (tractoAbreviado !== undefined) {
+    const hasTracto = String(tractoAbreviado) === 'true';
+    qb.andWhere('p.tractoAbreviado = :hasTracto', { hasTracto });
+  }
+
+  if (boleto !== undefined) {
+    const hasBoleto = String(boleto) === 'true';
+    qb.andWhere('p.boleto = :hasBoleto', { hasBoleto });
+  }
 
   // --- 3. BÚSQUEDA TEXTUAL (PRIORIDAD LOCALIDAD) ---
   if (searchRemaining.length >= 1) {

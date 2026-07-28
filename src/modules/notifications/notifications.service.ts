@@ -28,9 +28,11 @@ export class NotificationService {
     return propertyPrice <= preferredPrice;
   }
 
-  private m2Matches(propM2: number, prefM2: number): boolean {
-    if (!prefM2 || !propM2) return false;
-    return propM2 >= prefM2 * 0.85 && propM2 <= prefM2 * 1.30;
+  // Compara una superficie de la propiedad (total o cubierta) contra la
+  // preferida por el usuario, con el mismo margen de siempre (-15% / +30%)
+  private surfaceMatches(propSurface: number, prefSurface: number): boolean {
+    if (!prefSurface || !propSurface) return false;
+    return propSurface >= prefSurface * 0.85 && propSurface <= prefSurface * 1.30;
   }
 
   private antiquityMatches(propAnt: number, prefMaxAnt: number): boolean {
@@ -57,8 +59,9 @@ export class NotificationService {
 
       const criteriaToCheck = [
         pref.zone, pref.typeOfProperty, pref.preferredPrice,
-        pref.minRooms, pref.minBathrooms, pref.m2, pref.operationType,
-        pref.maxAntiquity, pref.property_deed, pref.barrio, pref.localidad,
+        pref.minRooms, pref.minBathrooms, pref.supTotal, pref.supCubierta,
+        pref.operationType, pref.maxAntiquity, pref.property_deed,
+        pref.tractoAbreviado, pref.boleto, pref.barrio, pref.localidad,
         pref.garage, pref.patio,
       ];
       const totalCriteria = criteriaToCheck.filter(
@@ -85,10 +88,16 @@ export class NotificationService {
         matched.push(`Habitaciones: ${property.rooms} (mínimo ${pref.minRooms})`);
       if (pref.minBathrooms && (property.bathrooms ?? 0) >= pref.minBathrooms)
         matched.push(`Baños: ${property.bathrooms}`);
-      if (pref.m2 && this.m2Matches(property.m2, pref.m2))
-        matched.push(`Superficie: ${property.m2} m² (acorde a tu búsqueda)`);
+      if (pref.supTotal && this.surfaceMatches(property.supTotal, pref.supTotal))
+        matched.push(`Sup. Total: ${property.supTotal} m² (acorde a tu búsqueda)`);
+      if (pref.supCubierta && this.surfaceMatches(property.supCubierta, pref.supCubierta))
+        matched.push(`Sup. Cubierta: ${property.supCubierta} m² (acorde a tu búsqueda)`);
       if (pref.property_deed === true && property.property_deed === true)
         matched.push('Tiene escrituras');
+      if (pref.tractoAbreviado === true && property.tractoAbreviado === true)
+        matched.push('Tiene tracto abreviado');
+      if (pref.boleto === true && property.boleto === true)
+        matched.push('Tiene boleto');
       if (pref.maxAntiquity !== undefined && pref.maxAntiquity !== null)
         if (this.antiquityMatches(Number(property.antiquity), Number(pref.maxAntiquity)))
           matched.push(`Antigüedad: ${property.antiquity} años`);

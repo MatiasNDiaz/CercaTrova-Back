@@ -11,7 +11,7 @@
 - **ValidationPipe global** (`main.ts`): `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`, `transformOptions: { enableImplicitConversion: true }`.
   - Cualquier campo no declarado en el DTO → 400 (rechazado, no ignorado).
   - Los parámetros de ruta (`@Param('id')`) tipados como `number` en la firma del método se convierten automáticamente a número — el frontend igual debe mandarlos como string en la URL (son parte del path).
-  - Los query params booleanos de `PropertyFilterDto` (`garage`, `patio`, `property_deed`) son **strings** `"true"`/`"false"` (`@IsBooleanString`), no booleanos JSON — son query params de URL.
+  - Los query params booleanos de `PropertyFilterDto` (`garage`, `patio`, `property_deed`, `tractoAbreviado`, `boleto`) son **strings** `"true"`/`"false"` (`@IsBooleanString`), no booleanos JSON — son query params de URL.
 - **CORS:** `credentials: true`. El frontend **debe** mandar `credentials: 'include'` (fetch) o `withCredentials: true` (axios) en TODAS las requests, incluso las que no requieren auth, para que la cookie de sesión viaje.
 - **Cookie de sesión:** nombre exacto `access_token`. `httpOnly: true`, `sameSite: 'lax'`, `secure` solo si `NODE_ENV=production`. `maxAge` derivado de `JWT_EXPIRATION_TIME` (si no está seteada, 24h). El frontend **no puede leer esta cookie desde JS** (httpOnly) — el estado de sesión se obtiene llamando a `GET /auth/me`.
 - **Headers especiales:** ninguno además de la cookie. No hay `Authorization: Bearer` — todo pasa por la cookie `access_token`. `helmet()` está activo (agrega headers de seguridad estándar en la respuesta: `X-Content-Type-Options`, `X-Frame-Options`, etc.) pero no afecta el body ni requiere headers especiales del cliente.
@@ -311,12 +311,15 @@ Query params (`PropertyFilterDto`, todos opcionales salvo defaults):
   page?: number = 1; limit?: number = 10;         // @IsInt @Min(1), limit además @Max(100)
   title?: string; zone?: string;
   rooms?: number; bathrooms?: number; typeOfPropertyId?: number;
-  minPrice?: number; maxPrice?: number; minM2?: number; maxM2?: number; maxAntiquity?: number;
-  garage?: "true" | "false"; patio?: "true" | "false"; property_deed?: "true" | "false"; // strings, no boolean JSON
+  minPrice?: number; maxPrice?: number; maxAntiquity?: number;
+  minSupTotal?: number; maxSupTotal?: number;       // superficie total
+  minSupCubierta?: number; maxSupCubierta?: number; // superficie cubierta
+  // Documentación legal: independientes entre sí, se pueden combinar
+  garage?: "true" | "false"; patio?: "true" | "false"; property_deed?: "true" | "false"; tractoAbreviado?: "true" | "false"; boleto?: "true" | "false"; // strings, no boolean JSON
   status?: StatusProperty;      // default implícito: DISPONIBLE si no se manda
-  provincia?: string; localidad?: string; barrio?: string;
+  provincia?: string; localidad?: string; barrio?: string; direccion?: string; // direccion: ILIKE parcial
   operationType?: OperationType;
-  search?: string;              // texto libre, parseado con NLP simple (detecta tipo, operación, m2, ambientes, precio, antigüedad)
+  search?: string;              // texto libre, parseado con NLP simple (detecta tipo, operación, metros → supTotal, ambientes, precio, antigüedad)
 }
 ```
 Response 200 — **envuelto**, no plano:
@@ -353,17 +356,18 @@ Response 200:
   title: string; description: string;
   typeOfPropertyId: number;             // debe existir en property-types
   operationType: OperationType;         // 'venta' | 'alquiler' | 'temporal'
-  property_deed: boolean;
-  provincia: string; localidad: string; barrio: string; zone: string;
+  // Documentación legal: independientes entre sí, se pueden combinar
+  property_deed: boolean; tractoAbreviado: boolean; boleto: boolean;
+  provincia: string; localidad: string; barrio: string; direccion: string; zone: string;
   rooms: number; bathrooms: number;
   garage: boolean; patio: boolean;
-  m2: number; antiquity: number; price: number;
+  supTotal: number; supCubierta: number; antiquity: number; price: number;
   status: StatusProperty;
 }
 ```
 Ejemplo real del contenido del campo `data`:
 ```json
-{"title":"Casa 3 amb","description":"...","typeOfPropertyId":1,"operationType":"venta","property_deed":true,"provincia":"Córdoba","localidad":"Villa Carlos Paz","barrio":"La Cuesta","zone":"Norte","rooms":3,"bathrooms":2,"garage":true,"patio":true,"m2":120,"antiquity":5,"price":150000,"status":"disponible"}
+{"title":"Casa 3 amb","description":"...","typeOfPropertyId":1,"operationType":"venta","property_deed":true,"tractoAbreviado":false,"boleto":false,"provincia":"Córdoba","localidad":"Villa Carlos Paz","barrio":"La Cuesta","direccion":"Av. San Martín 1250","zone":"Norte","rooms":3,"bathrooms":2,"garage":true,"patio":true,"supTotal":120,"supCubierta":90,"antiquity":5,"price":150000,"status":"disponible"}
 ```
 Response 201:
 ```ts
@@ -588,12 +592,14 @@ Body (`CreateSearchPreferenceDto`, todos opcionales):
   zone?: string; localidad?: string; barrio?: string;
   garage?: boolean; patio?: boolean;
   operationType?: OperationType;         // 'venta' | 'alquiler' | 'temporal'
-  property_deed?: boolean;
+  // Documentación legal: independientes entre sí, se pueden combinar
+  property_deed?: boolean; tractoAbreviado?: boolean; boleto?: boolean;
   typeOfPropertyId?: number;
   preferredPrice?: number;    // @Min(0)
   minRooms?: number;          // @Min(0)
   minBathrooms?: number;      // @Min(0)
-  m2?: number;                // @Min(0)
+  supTotal?: number;          // @Min(0)
+  supCubierta?: number;       // @Min(0)
   maxAntiquity?: number;      // @Min(0)
   notifyNewMatches?: boolean;
   notifyPriceDrops?: boolean;
@@ -601,7 +607,7 @@ Body (`CreateSearchPreferenceDto`, todos opcionales):
 ```
 Response 201 — `SearchPreference` con `typeOfProperty` y `user` cargados:
 ```ts
-{ id, zone, localidad, barrio, operationType, typeOfProperty: PropertyType | null, property_deed, preferredPrice, minRooms, minBathrooms, m2, garage, patio, maxAntiquity, notifyNewMatches: boolean /* default true */, notifyPriceDrops: boolean /* default true */, createdAt, updatedAt, user: User /* sin password */ }
+{ id, zone, localidad, barrio, operationType, typeOfProperty: PropertyType | null, property_deed, tractoAbreviado, boleto, preferredPrice, minRooms, minBathrooms, supTotal, supCubierta, garage, patio, maxAntiquity, notifyNewMatches: boolean /* default true */, notifyPriceDrops: boolean /* default true */, createdAt, updatedAt, user: User /* sin password */ }
 ```
 Errores: 404 si `typeOfPropertyId` no existe.
 
@@ -882,13 +888,19 @@ export interface Property {
   provincia: string;
   localidad: string;
   barrio: string;
+  /** Calle y número — fuente del mapa en el detalle. Null en las cargadas antes de este campo. */
+  direccion: string | null;
   zone: string;
   rooms: number;
   bathrooms: number;
+  /** Documentación legal: independientes entre sí, se pueden combinar */
   property_deed: boolean;
+  tractoAbreviado: boolean;
+  boleto: boolean;
   garage: boolean;
   patio: boolean;
-  m2: number | null;
+  supTotal: number | null;
+  supCubierta: number | null;
   antiquity: number;
   price: number;
   status: StatusProperty;
@@ -951,10 +963,13 @@ export interface SearchPreference {
   operationType: OperationType | null;
   typeOfProperty: PropertyType | null;
   property_deed: boolean | null;
+  tractoAbreviado: boolean | null;
+  boleto: boolean | null;
   preferredPrice: number | null;
   minRooms: number | null;
   minBathrooms: number | null;
-  m2: number | null;
+  supTotal: number | null;
+  supCubierta: number | null;
   garage: boolean | null;
   patio: boolean | null;
   maxAntiquity: number | null;
@@ -1082,15 +1097,19 @@ export interface CreatePropertyDto {
   typeOfPropertyId: number;
   operationType: OperationType;
   property_deed: boolean;
+  tractoAbreviado: boolean;
+  boleto: boolean;
   provincia: string;
   localidad: string;
   barrio: string;
+  direccion: string;
   zone: string;
   rooms: number;
   bathrooms: number;
   garage: boolean;
   patio: boolean;
-  m2: number;
+  supTotal: number;
+  supCubierta: number;
   antiquity: number;
   price: number;
   status: StatusProperty;
@@ -1111,17 +1130,22 @@ export interface PropertyFilterDto {
   typeOfPropertyId?: number;
   minPrice?: number;
   maxPrice?: number;
-  minM2?: number;
-  maxM2?: number;
+  minSupTotal?: number;
+  maxSupTotal?: number;
+  minSupCubierta?: number;
+  maxSupCubierta?: number;
   maxAntiquity?: number;
   garage?: 'true' | 'false';
   patio?: 'true' | 'false';
   property_deed?: 'true' | 'false';
+  tractoAbreviado?: 'true' | 'false';
+  boleto?: 'true' | 'false';
   status?: StatusProperty;
   provincia?: string;
   localidad?: string;
   operationType?: OperationType;
   barrio?: string;
+  direccion?: string;
   search?: string;
 }
 
@@ -1182,11 +1206,14 @@ export interface CreateSearchPreferenceDto {
   patio?: boolean;
   operationType?: OperationType;
   property_deed?: boolean;
+  tractoAbreviado?: boolean;
+  boleto?: boolean;
   typeOfPropertyId?: number;
   preferredPrice?: number;
   minRooms?: number;
   minBathrooms?: number;
-  m2?: number;
+  supTotal?: number;
+  supCubierta?: number;
   maxAntiquity?: number;
   notifyNewMatches?: boolean;
   notifyPriceDrops?: boolean;
