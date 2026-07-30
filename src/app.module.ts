@@ -21,6 +21,10 @@ import { EmailModule } from './modules/notifications/email/email.module';
 import { NotificationModule } from './modules/notifications/notifications.module';
 import { SearchPreferencesModule } from './modules/search-preferences/search-preferences.module';
 import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { PostsModule } from './modules/posts/posts.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
+import { StatisticsModule } from './modules/statistics/statistics.module';
 @Module({
   // La propiedad 'imports' define los módulos que este módulo necesita.
   imports: [
@@ -46,6 +50,10 @@ import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 100 }],
     }),
+
+    // ⏰ Tareas programadas. Hoy la única es el borrado automático de
+    // publicaciones vencidas (`PostsCleanupService`), a las 3am.
+    ScheduleModule.forRoot(),
     // 📝 FUNCIÓN: Establece la conexión principal a la Base de Datos.
     // 'forRoot' inicializa TypeORM con la configuración de conexión
     // (credenciales, tipo de DB, etc.) definida en 'typeOrmConfig'.
@@ -68,6 +76,9 @@ import { PropertyRequestModule } from './modules/PropertyRequest/propertyRequest
     NotificationModule,
     SearchPreferencesModule,
     PropertyRequestModule,
+    PostsModule,
+    TrackingModule,
+    StatisticsModule,
   ],
   providers: [
     BootstrapService,

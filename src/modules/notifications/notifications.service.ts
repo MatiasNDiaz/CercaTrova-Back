@@ -40,6 +40,21 @@ export class NotificationService {
     return Number(propAnt) <= (Number(prefMaxAnt) + 2);
   }
 
+  /**
+   * Ficha técnica que se muestra en la tarjeta de los emails de propiedad.
+   * Se descartan los campos vacíos para que no queden filas con "undefined".
+   */
+  private propertySpecs(property: Property): { label: string; value: string | number }[] {
+    return [
+      { label: 'Tipo',          value: property.typeOfProperty?.name ?? '' },
+      { label: 'Ambientes',     value: property.rooms ?? '' },
+      { label: 'Baños',         value: property.bathrooms ?? '' },
+      { label: 'Sup. Total',    value: property.supTotal != null ? `${property.supTotal} m²` : '' },
+      { label: 'Sup. Cubierta', value: property.supCubierta != null ? `${property.supCubierta} m²` : '' },
+      { label: 'Antigüedad',    value: property.antiquity != null ? `${property.antiquity} años` : '' },
+    ].filter((s) => s.value !== '' && s.value !== null && s.value !== undefined);
+  }
+
   // -----------------------------------------------------
   // 1. NUEVA PROPIEDAD — matching + broadcast global
   // -----------------------------------------------------
@@ -47,6 +62,14 @@ export class NotificationService {
     const prefs = await this.searchPrefService.findAllWithUsers();
     const imageUrls = property.images?.map((i) => i.url) ?? [];
     const notifiedUserIds = new Set<number>();
+
+    // Se juntan todos los matches primero y recién después se guarda y se
+    // envía, para no hacer una query y un email por vuelta del for.
+    const coincidencias: {
+      pref: (typeof prefs)[number];
+      matched: string[];
+      totalCriteria: number;
+    }[] = [];
 
     for (const pref of prefs) {
       if (!pref.notifyNewMatches || !pref.user?.email) continue;
@@ -109,32 +132,60 @@ export class NotificationService {
       if (matched.length === 0) continue;
 
       notifiedUserIds.add(pref.user.id);
+      // Se acumula en vez de guardar/enviar acá adentro: ver nota de abajo.
+      coincidencias.push({ pref, matched, totalCriteria });
+    }
 
-      await this.repo.save(this.repo.create({
-        user: pref.user,
-        title: '¡Propiedad que te puede interesar!',
-        message: `Encontramos una propiedad que cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
-        propertyId: property.id,
-      }));
+    // ── Un solo INSERT para todas las notificaciones ──
+    // Antes se hacía `await repo.save(...)` DENTRO del for: con 100 usuarios
+    // que matcheaban eran 100 INSERTs secuenciales.
+    if (coincidencias.length > 0) {
+      await this.repo.save(
+        coincidencias.map(({ pref, matched, totalCriteria }) =>
+          this.repo.create({
+            user: pref.user,
+            title: '¡Propiedad que te puede interesar!',
+            message: `Encontramos una propiedad que cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
+            propertyId: property.id,
+          }),
+        ),
+      );
 
-      try {
-        await this.emailService.sendEmail(
-          pref.user.email,
-          'Nueva propiedad según tus preferencias',
-          EmailTemplates.matchSearch(
-            pref.user.name || 'Usuario',
-            property.title,
-            `${property.barrio}, ${property.localidad}`,
-            property.price,
-            imageUrls,
-            matched,
-            matched.length,
-            totalCriteria,
-            property.operationType,
+      // ── Emails en paralelo, de a tandas ──
+      // Cada usuario recibe un cuerpo DISTINTO (lleva sus propios criterios
+      // matcheados), así que no se puede usar el batch de SendGrid, que solo
+      // permite variar los destinatarios y no el HTML. Lo que sí se puede es
+      // dejar de mandarlos de a uno esperando cada respuesta: antes, con 100
+      // usuarios y ~300ms por request, el aviso tardaba 30 segundos en salir.
+      // El tope de concurrencia evita abrir 100 conexiones de golpe.
+      const CONCURRENCIA = 10;
+      for (let i = 0; i < coincidencias.length; i += CONCURRENCIA) {
+        await Promise.allSettled(
+          coincidencias.slice(i, i + CONCURRENCIA).map(({ pref, matched, totalCriteria }) =>
+            this.emailService
+              .sendEmail(
+                pref.user.email,
+                'Nueva propiedad según tus preferencias',
+                EmailTemplates.matchSearch(
+                  pref.user.name || 'Usuario',
+                  property.title,
+                  `${property.barrio}, ${property.localidad}`,
+                  property.price,
+                  imageUrls,
+                  matched,
+                  matched.length,
+                  totalCriteria,
+                  property.operationType,
+                  this.propertySpecs(property),
+                  property.description,
+                  property.id,
+                ),
+              )
+              .catch(() =>
+                console.error(`[ERROR MAIL] No se pudo enviar a ${pref.user.email}`),
+              ),
           ),
         );
-      } catch {
-        console.error(`[ERROR MAIL] No se pudo enviar a ${pref.user.email}`);
       }
     }
 
@@ -179,6 +230,9 @@ export class NotificationService {
           property.price,
           imageUrls,
           property.operationType,
+          this.propertySpecs(property),
+          property.description,
+          property.id,
         ),
       );
     } catch {
@@ -234,6 +288,89 @@ export class NotificationService {
   }
 
   // -----------------------------------------------------
+  // 3.b NUEVA PUBLICACIÓN (feed de Publicaciones)
+  // -----------------------------------------------------
+  /**
+   * Avisa a todos los usuarios que se publicó algo nuevo en el feed.
+   *
+   * Recibe datos planos y NO la entidad `Post` a propósito: así
+   * `NotificationModule` no necesita depender de `PostsModule` (que a su vez
+   * depende de este) y no se arma un ciclo de imports.
+   */
+  async handleNewPost(post: { id: number; description: string; imageUrl?: string }) {
+    const allUsers = await this.usersService.getAllUsers();
+    const usersToNotify = allUsers.filter((u) => u.email);
+    if (usersToNotify.length === 0) return;
+
+    const preview =
+      post.description.length > 100
+        ? `${post.description.slice(0, 100)}…`
+        : post.description;
+
+    await this.repo.save(
+      usersToNotify.map((user) =>
+        this.repo.create({
+          user,
+          title: 'Nueva publicación',
+          message: `Publicamos algo nuevo: "${preview}"`,
+        }),
+      ),
+    );
+
+    // 📧 (M8): el email masivo respeta el opt-out notifyBroadcast;
+    // la notificación in-app se guarda igual para todos.
+    const emailRecipients = usersToNotify
+      .filter((u) => u.notifyBroadcast !== false)
+      .map((u) => u.email);
+    if (emailRecipients.length === 0) return;
+
+    await this.emailService
+      .sendMultipleEmails(
+        emailRecipients,
+        'Nueva publicación en CercaTrova',
+        EmailTemplates.newPost(preview, post.imageUrl),
+      )
+      .catch((err) => console.error('[MAIL POST] Falló el aviso de publicación:', err));
+  }
+
+  // -----------------------------------------------------
+  // 3.c RESPUESTA A UN COMENTARIO (Publicaciones)
+  // -----------------------------------------------------
+  /**
+   * Avisa al autor del comentario que alguien le respondió.
+   * No hace nada si el usuario se responde a sí mismo.
+   */
+  async notifyCommentReply(data: {
+    commentOwnerId: number;
+    responderName: string;
+    responderIsAdmin: boolean;
+    replyPreview: string;
+    postId: number;
+  }) {
+    const owner = await this.usersService.getUserById(data.commentOwnerId);
+    if (!owner) return;
+
+    const preview =
+      data.replyPreview.length > 120
+        ? `${data.replyPreview.slice(0, 120)}…`
+        : data.replyPreview;
+
+    const quien = data.responderIsAdmin ? 'El equipo de CercaTrova' : data.responderName;
+    const title = 'Respondieron tu comentario';
+    const message = `${quien} respondió a tu comentario: "${preview}"`;
+
+    await this.repo.save(
+      this.repo.create({ user: owner, title, message, propertyId: null }),
+    );
+
+    if (!owner.email) return;
+
+    this.emailService
+      .sendEmail(owner.email, title, EmailTemplates.commentReply(owner.name || 'Usuario', quien, preview))
+      .catch(() => console.error(`[MAIL REPLY] No se pudo avisar a ${owner.email}`));
+  }
+
+  // -----------------------------------------------------
   // 4. CAMBIO DE ESTADO DE SOLICITUD
   // -----------------------------------------------------
   async handleRequestStatusChange(request: PropertyRequest) {
@@ -279,11 +416,46 @@ export class NotificationService {
   // -----------------------------------------------------
   // GET para el usuario
   // -----------------------------------------------------
+  /**
+   * ⚠️ Excluye las notificaciones con `targetRole = 'admin'`.
+   *
+   * `createAdminNotification` las guarda con `user = <cada admin>` Y
+   * `targetRole = 'admin'`, así que filtrando solo por `user.id` un admin las
+   * recibía por los DOS endpoints: aparecían en `/notifications` (su feed
+   * personal) y otra vez en `/notifications/admin`. En datos reales eso daba 82
+   * contra 63 — la campanita y el panel contaban de más.
+   *
+   * Los dos feeds ahora son disjuntos: acá van solo las notificaciones
+   * personales (nueva propiedad, baja de precio, respuesta a un comentario…) y
+   * en `getForAdmin` solo las de gestión.
+   */
   async getForUser(userId: number) {
     return this.repo.find({
-      where: { user: { id: userId } },
+      where: { user: { id: userId }, targetRole: 'user' },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  // -----------------------------------------------------
+  // CONTEO DE NO LEÍDAS
+  // -----------------------------------------------------
+  /**
+   * Solo el número, para la campanita.
+   *
+   * Antes el front pedía la lista COMPLETA cada 60 segundos y contaba en JS los
+   * no leídos: con 82 notificaciones eso son 82 filas con su relación de
+   * usuario viajando por la red para mostrar un número. Acá lo resuelve un
+   * `COUNT(*)` en la base.
+   */
+  async countUnread(userId: number, role: Role): Promise<{ count: number }> {
+    const count =
+      role === Role.ADMIN
+        ? await this.repo.count({ where: { targetRole: 'admin', read: false } })
+        : await this.repo.count({
+            where: { user: { id: userId }, targetRole: 'user', read: false },
+          });
+
+    return { count };
   }
 
   // -----------------------------------------------------
@@ -333,6 +505,7 @@ export class NotificationService {
     message: string,
     propertyId?: number,
     relatedUserId?: number, // 👈
+    emoji = '🔔',
   ) {
     const admins = await this.usersService.getAdminUsers();
     if (!admins.length) return;
@@ -349,6 +522,16 @@ export class NotificationService {
         }),
       ),
     );
+
+    // 📧 Además de la notificación in-app (campanita), el mismo aviso va por
+    // email a los admins. No bloquea: si el envío falla, la notificación
+    // in-app ya quedó guardada y el fallo se registra en `failed_emails`.
+    const recipients = admins.map((a) => a.email).filter(Boolean);
+    if (recipients.length === 0) return;
+
+    this.emailService
+      .sendMultipleEmails(recipients, title, EmailTemplates.adminAlert(title, message, emoji))
+      .catch((err) => console.error('[MAIL ADMIN] Falló el aviso por email:', err));
   }
 
   // -----------------------------------------------------
@@ -361,6 +544,7 @@ export class NotificationService {
       null,
       newUser.id, // 👈
       
+      '👤',
     );
   }
 
@@ -379,6 +563,7 @@ export class NotificationService {
       `${data.userName} comentó en "${data.propertyTitle}": "${data.commentPreview.slice(0, 80)}${data.commentPreview.length > 80 ? '...' : ''}"`,
       data.propertyId,
          data.relatedUserId, // 👈
+         '💬',
     );
   }
 
@@ -397,6 +582,7 @@ export class NotificationService {
       `${data.userName} valoró "${data.propertyTitle}" con ${data.score} estrella${data.score !== 1 ? 's' : ''}.`,
       data.propertyId,
          data.relatedUserId, // 👈
+         '⭐',
     );
   }
 
@@ -413,8 +599,9 @@ export class NotificationService {
     await this.createAdminNotification(
       'Nueva solicitud de publicación',
       `${data.userName} solicitó publicar una propiedad en ${data.direccion}, ${data.barrio}, ${data.localidad}.`,
-      null,         
+      null,
       data.relatedUserId, // 👈
+      '📄',
     );
   }
 
@@ -432,6 +619,48 @@ export class NotificationService {
       `${data.userName} guardó "${data.propertyTitle}" en sus favoritos.`,
       data.propertyId,
          data.relatedUserId, // 👈
+         '❤️',
+    );
+  }
+
+  // -----------------------------------------------------
+  // ADMIN 6. COMENTARIO EN UNA PUBLICACIÓN
+  // -----------------------------------------------------
+  /**
+   * Las publicaciones las crea el admin, así que un comentario en una de ellas
+   * es un aviso para él ("Matías comentó tu publicación sobre…").
+   *
+   * Faltaba por completo: `posts.service.createComment()` guardaba el comentario
+   * y no avisaba a nadie. Solo estaba cubierta la RESPUESTA a un comentario
+   * (`notifyCommentReply`), que avisa al usuario, no al admin.
+   *
+   * Como todo lo que pasa por `createAdminNotification`, dispara los 4 canales:
+   * queda en el panel, suma a la campanita, entra en el toast de pendientes y
+   * sale por email.
+   */
+  async notifyAdminNewPostComment(data: {
+    userName: string;
+    postDescription: string;
+    postId: number;
+    commentPreview: string;
+    relatedUserId: number;
+  }) {
+    const tema =
+      data.postDescription.length > 60
+        ? `${data.postDescription.slice(0, 60)}…`
+        : data.postDescription;
+
+    const preview =
+      data.commentPreview.length > 80
+        ? `${data.commentPreview.slice(0, 80)}…`
+        : data.commentPreview;
+
+    await this.createAdminNotification(
+      'Nuevo comentario en una publicación',
+      `${data.userName} comentó tu publicación sobre "${tema}": "${preview}"`,
+      null,
+      data.relatedUserId,
+      '📣',
     );
   }
 

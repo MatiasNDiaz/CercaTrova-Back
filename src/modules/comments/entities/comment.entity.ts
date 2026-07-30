@@ -10,6 +10,14 @@ export class Comment {
   @Column('text')
   message: string;
 
+  /**
+   * Moderación blanda del admin: el comentario no se borra, deja de mostrarse
+   * a los usuarios comunes. El admin lo sigue viendo, marcado como oculto.
+   * Mismo criterio que `PostComment.isHidden` en Publicaciones.
+   */
+  @Column({ default: false })
+  isHidden: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 

@@ -56,13 +56,21 @@ export class CommentsService {
     return saved;
   }
 
-  async findByProperty(propertyId: number) {
+  /**
+   * `includeHidden` solo lo manda el admin: para el público, un comentario
+   * oculto no existe. Mismo criterio que `PostsService.findComments`.
+   */
+  async findByProperty(propertyId: number, includeHidden = false) {
     return this.commentRepo.find({
-      where: { property: { id: propertyId } },
+      where: {
+        property: { id: propertyId },
+        ...(includeHidden ? {} : { isHidden: false }),
+      },
       relations: ['user'],
       select: {
         id: true,
         message: true,
+        isHidden: true,
         created_at: true,
         userId: true,
         propertyId: true,
@@ -75,6 +83,34 @@ export class CommentsService {
       },
       order: { created_at: 'DESC' },
     });
+  }
+
+  /**
+   * Comentarios que dejó un usuario, con la propiedad cargada — alimenta
+   * "Propiedades que comenté" del dashboard del usuario.
+   * Incluye los ocultos: es su propio contenido, y se marcan en la UI.
+   */
+  async findByUser(userId: number) {
+    return this.commentRepo.find({
+      where: { user: { id: userId } },
+      relations: ['property', 'property.images', 'property.typeOfProperty'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  /** Togglea la visibilidad de un comentario (solo admin, ver controller). */
+  async toggleHidden(commentId: number) {
+    const comment = await this.commentRepo.findOne({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('El comentario no existe');
+
+    comment.isHidden = !comment.isHidden;
+    await this.commentRepo.save(comment);
+
+    return {
+      id: comment.id,
+      isHidden: comment.isHidden,
+      message: comment.isHidden ? 'Comentario ocultado' : 'Comentario visible de nuevo',
+    };
   }
 
   async update(commentId: number, userId: number, dto: UpdateCommentDto) {

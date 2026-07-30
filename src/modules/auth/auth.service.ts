@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login-auth.dto';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '../users/enums/role.enum';
+import { AuthProvider } from '../users/enums/auth-provider.enum';
 import { NotificationService } from '../notifications/notifications.service';
 import { GoogleAuthService } from './google.auth.service';
 
@@ -87,7 +88,9 @@ export class AuthService {
       // (F8): los usuarios creados vía Google arrancan sin teléfono ni
       // contraseña local → profileIncomplete = true (el frontend debe
       // guiarlos a completar el perfil)
-      user = await this.userService.createUser(partialUser, true);
+      // `AuthProvider.GOOGLE` deja registrado el método de alta para la
+      // estadística de "registros por método" del panel.
+      user = await this.userService.createUser(partialUser, true, AuthProvider.GOOGLE);
       // Los defaults de la entidad los aplica la DB, pero save() no los
       // devuelve: los fijamos para que el payload del JWT y la respuesta
       // tengan los valores reales

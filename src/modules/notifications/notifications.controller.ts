@@ -16,6 +16,14 @@ export class NotificationController {
     return this.service.getForUser(req.user.id);
   }
 
+  // GET /notifications/unread-count — solo el número, para la campanita.
+  // Sirve para los dos roles: resuelve por el rol del token, así el front no
+  // tiene que elegir endpoint. Se declara antes de cualquier ruta con `:id`.
+  @Get('unread-count')
+  countUnread(@Req() req) {
+    return this.service.countUnread(req.user.id, req.user.role);
+  }
+
   // PATCH /notifications/:id/read — marcar una como leída
   // 🔒 SEGURIDAD (M6): se pasa el usuario del token para validar ownership
   @Patch(':id/read')

@@ -112,4 +112,16 @@ export class RatingsService {
       },
     });
   }
+
+  /**
+   * Valoraciones que hizo un usuario, con la propiedad cargada — alimenta
+   * "Propiedades que valoré" del dashboard del usuario.
+   */
+  async getByUser(userId: number) {
+    return this.ratingRepo.find({
+      where: { user: { id: userId } },
+      relations: ['property', 'property.images', 'property.typeOfProperty'],
+      order: { id: 'DESC' },
+    });
+  }
 }

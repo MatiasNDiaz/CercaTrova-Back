@@ -14,7 +14,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "strictPropertyInitialization": false,
-    "incremental": true,
+    // "incremental" A PROPÓSITO fuera de acá: guarda su caché (.tsbuildinfo)
+    // en la raíz del proyecto, NO dentro de `outDir`. `deleteOutDir` (en
+    // nest-cli.json) borra `dist/` en cada build pero nunca toca esa caché, así
+    // que un `nest build` podía creer que un archivo seguía "sin cambios" y no
+    // reemitirlo — el dist quedaba desactualizado sin ningún error. Si en algún
+    // momento hace falta acelerar el build, hay que fijar `tsBuildInfoFile`
+    // DENTRO de `outDir` para que `deleteOutDir` lo arrastre también.
     "skipLibCheck": true,
     "strictNullChecks": false,
     "forceConsistentCasingInFileNames": true,

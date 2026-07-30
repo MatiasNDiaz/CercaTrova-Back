@@ -11,7 +11,9 @@ import {
   Query,
   UseInterceptors,
   UploadedFiles,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { JsonToDtoPipe } from 'src/common/pipes/json-to-dto.pipe';
 import { imageUploadOptions } from 'src/common/multer/image-upload.options';
 import { PropertiesService } from './properties.service';
@@ -23,6 +25,9 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from '../users/enums/role.enum';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
+import { TrackingService } from '../tracking/tracking.service';
+import { getVisitorId } from '../tracking/visitor-id.middleware';
 import { PropertyFilterDto } from './dto/property-filter.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
@@ -31,7 +36,10 @@ type MulterFile = Express.Multer.File;
 @Controller('properties')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PropertiesController {
-  constructor(private readonly propertiesService: PropertiesService) {}
+  constructor(
+    private readonly propertiesService: PropertiesService,
+    private readonly trackingService: TrackingService,
+  ) {}
 
   @Public()
   @Get()
@@ -40,16 +48,41 @@ export class PropertiesController {
 
   }
 
+  // `OptionalJwtAuthGuard` no exige sesión, pero puebla `req.user` cuando la
+  // hay: hace falta para poder EXCLUIR al admin de las métricas sin cerrarle
+  // la ruta a los visitantes anónimos.
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('filter') // Asegurate de que NO haya un @Get(':id') arriba de este que pueda atrapar la palabra "filter"
-  async filter(@Query() filters: PropertyFilterDto) {
-  console.log('Filtros recibidos:', filters); // Agregá este log para debuguear
-  return this.propertiesService.filter(filters);
+  async filter(
+    @Query() filters: PropertyFilterDto,
+    @Req() req: Request,
+    @GetUser('id') userId?: number,
+    @GetUser('role') role?: Role,
+  ) {
+    // Telemetría de búsquedas (Fase 0). Fire-and-forget: registrar una métrica
+    // nunca puede demorar ni romper la búsqueda del usuario.
+    void this.trackingService.recordFilterUsage(filters, getVisitorId(req), userId, role);
+    return this.propertiesService.filter(filters);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @GetUser('id') userId?: number,
+    @GetUser('role') role?: Role,
+  ) {
+    // Idem: alimenta el ranking de "propiedades más visitadas". El service
+    // descarta las vistas del admin.
+    void this.trackingService.recordPropertyView({
+      propertyId: +id,
+      visitorId: getVisitorId(req),
+      userId,
+      role,
+    });
     return this.propertiesService.findOne(+id);
   }
 

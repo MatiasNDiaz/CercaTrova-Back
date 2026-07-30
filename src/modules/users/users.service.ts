@@ -12,6 +12,7 @@ import { CloudinaryService } from 'src/common/Cloudinary/cloudinary.service';
 import * as bcrypt from 'bcrypt';
 import { PropertyRequest } from '../PropertyRequest/entities/PropertyRequest';
 import { Role } from './enums/role.enum';
+import { AuthProvider } from './enums/auth-provider.enum';
 
 @Injectable()
 export class UsersService {
@@ -56,7 +57,17 @@ export class UsersService {
   // (F8): `profileIncomplete` es un parámetro interno (NO viene del DTO
   // público) — solo el alta vía Google lo pasa en true, porque esos
   // usuarios arrancan sin teléfono ni contraseña local.
-  async createUser(createUserDto: CreateUserDto, profileIncomplete = false): Promise<User> {
+  /**
+   * `authProvider` deja registrado si la cuenta nació del formulario del sitio
+   * o del login con Google — es la fuente de la estadística "registros por
+   * método" del panel. Default LOCAL: quien llama sin especificarlo es el
+   * registro común.
+   */
+  async createUser(
+    createUserDto: CreateUserDto,
+    profileIncomplete = false,
+    authProvider: AuthProvider = AuthProvider.LOCAL,
+  ): Promise<User> {
     try {
       // Verificación: email único
       const existing = await this.userRepository.findOne({
@@ -78,6 +89,7 @@ export class UsersService {
       const user: User = this.userRepository.create({
         ...createUserDto,
         profileIncomplete,
+        authProvider,
       });
       const saved = await this.userRepository.save(user);
 

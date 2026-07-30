@@ -8,6 +8,7 @@ import { SearchPreference } from '../../search-preferences/entities/search-prefe
 import { Comment } from '../../comments/entities/comment.entity';
 import { Notification } from '../../notifications/entities/notification.entity';
 import { Role } from '../enums/role.enum';
+import { AuthProvider } from '../enums/auth-provider.enum';
 
 @Entity('users')
 export class User {
@@ -40,6 +41,14 @@ export class User {
 
   @Column({ type: 'enum', enum: Role, default: Role.USER })
   role: Role;
+
+  /**
+   * Cómo se registró la cuenta. Alimenta la estadística "registros por método"
+   * del panel. Default `LOCAL` para que las cuentas que ya existían queden
+   * clasificadas como registro por formulario, que es lo que fueron.
+   */
+  @Column({ type: 'enum', enum: AuthProvider, default: AuthProvider.LOCAL })
+  authProvider: AuthProvider;
 
   // 📧 (M8): opt-out de emails masivos (broadcast de nuevas propiedades y
   // bajas de precio). Las notificaciones in-app no se ven afectadas.

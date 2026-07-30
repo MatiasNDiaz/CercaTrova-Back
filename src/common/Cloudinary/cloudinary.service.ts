@@ -9,11 +9,16 @@ export class CloudinaryService {
     @Inject('Cloudinary') private cloudinary,
   ) {}
 
-  uploadImage(file: Express.Multer.File): Promise<UploadApiResponse> {
+  /**
+   * `folder` es opcional y por defecto sigue siendo 'properties', así los
+   * llamados que ya existían no cambian de comportamiento. Las publicaciones
+   * (`posts`) pasan su propia carpeta para no mezclarse con las propiedades.
+   */
+  uploadImage(file: Express.Multer.File, folder = 'properties'): Promise<UploadApiResponse> {
     return new Promise((resolve, reject) => {
       const upload = this.cloudinary.uploader.upload_stream(
         {
-          folder: 'properties',
+          folder,
         },
         (error: UploadApiErrorResponse, result: UploadApiResponse) => {
           if (error) return reject(error);  
