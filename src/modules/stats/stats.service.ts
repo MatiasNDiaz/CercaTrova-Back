@@ -160,13 +160,21 @@ export class StatsService {
     `);
   }
 
+  // 🐛 FIX: `orderBy('avgPrice', ...)` generaba `ORDER BY avgprice` SIN comillas.
+  // Postgres pliega a minúsculas los identificadores sin comillar, y el alias
+  // del select sí va comillado (`"avgPrice"`), así que nunca matcheaban: los
+  // dos endpoints respondían 500 «no existe la columna "avgprice"» SIEMPRE,
+  // hubiera datos o no. Se ordena por la EXPRESIÓN en vez de por el alias, que
+  // es inmune al plegado de mayúsculas.
+  private static readonly AVG_PRICE_EXPR = 'AVG(("u"."priceMin" + "u"."priceMax") / 2)';
+
   async priceByPropertyType() {
     return this.repo
       .createQueryBuilder('u')
       .select('"u"."propertyType"', 'propertyType')
-      .addSelect('AVG(("u"."priceMin" + "u"."priceMax") / 2)', 'avgPrice')
+      .addSelect(StatsService.AVG_PRICE_EXPR, 'avgPrice')
       .groupBy('"u"."propertyType"')
-      .orderBy('avgPrice', 'DESC')
+      .orderBy(StatsService.AVG_PRICE_EXPR, 'DESC')
       .getRawMany();
   }
 
@@ -174,9 +182,9 @@ export class StatsService {
     return this.repo
       .createQueryBuilder('u')
       .select('"u"."zone"', 'zone')
-      .addSelect('AVG(("u"."priceMin" + "u"."priceMax") / 2)', 'avgPrice')
+      .addSelect(StatsService.AVG_PRICE_EXPR, 'avgPrice')
       .groupBy('"u"."zone"')
-      .orderBy('avgPrice', 'DESC')
+      .orderBy(StatsService.AVG_PRICE_EXPR, 'DESC')
       .getRawMany();
   }
 

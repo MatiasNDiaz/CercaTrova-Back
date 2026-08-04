@@ -1,6 +1,6 @@
 # TestAPI — Auditoría pre-despliegue (backend)
 
-> Auditoría: 2026-08-02 · **Correcciones aplicadas: 2026-08-03** · **Decisiones cerradas: 2026-08-04**
+> Auditoría: 2026-08-02 · **Correcciones aplicadas: 2026-08-03** · **Decisiones cerradas y preparación para producción: 2026-08-04**
 >
 > Auditoría original sobre el código ya hardened (SECURITY_FIXES.md,
 > SECURITY_FIXES_2.md, FEATURES.md, ERROR_FIXES.md).
@@ -66,6 +66,181 @@ cero diferencias).
 
 ⚠️ **Tres migraciones tocan DATOS existentes**, no solo schema — ver
 "Migraciones de datos" al final.
+
+---
+
+## 🚀 PREPARACIÓN PARA PRODUCCIÓN (2026-08-04)
+
+Tres tareas previas al deploy: cambio del email de sistema, garantía de un único
+admin, y limpieza total de la base de datos y de Cloudinary.
+
+### 📦 Backup previo (la limpieza fue irreversible)
+
+Generado ANTES de borrar nada, con `pg_dump` de PostgreSQL 16:
+
+| Archivo | Formato | Tamaño |
+|---|---|---|
+| `backups/cercatrova_pre_limpieza_2026-08-04.dump` | custom (`-F c`, restaurable con `pg_restore`) | 115 KB |
+| `backups/cercatrova_pre_limpieza_2026-08-04.sql` | SQL plano (legible/inspeccionable) | 318 KB |
+| `backups/cloudinary_borradas_2026-08-04.txt` | manifiesto de los 131 `public_id` borrados de Cloudinary | 3.7 KB |
+
+Integridad verificada con `pg_restore --list`: **las 19 tablas con datos están
+en el dump**. `/backups` quedó agregado a `.gitignore` — los dumps contienen
+datos personales reales (emails, teléfonos, hashes de password) y **nunca** deben
+versionarse.
+
+**Restaurar, si hiciera falta:**
+```bash
+pg_restore -h localhost -p 5432 -U <user> -d <db> --clean --if-exists \
+  backups/cercatrova_pre_limpieza_2026-08-04.dump
+```
+
+### 1. ✅ Email de notificaciones → inmobiliariacercatrova@gmail.com
+
+`grep -rn "matidiazargentino21" src/` → **cero ocurrencias**: el remitente ya
+era 100 % configuración (`EMAIL_FROM`), sin nada hardcodeado. Solo quedaba en
+`.env` y en menciones históricas de `AUDIT.md`/`SECURITY_FIXES_2.md` (que
+documentan el bug B6 de su momento y no se tocan).
+
+⚠️ **Un detalle que no era obvio y habría dejado el cambio a medias:**
+`SMTP_HOST` es `smtp.gmail.com`, y **Gmail reescribe el header `From` a la
+cuenta autenticada en `SMTP_USER`**. Cambiar solo `EMAIL_FROM` no habría
+cambiado nada de lo que ve el destinatario. Se actualizaron las tres variables
+juntas con las credenciales de la cuenta nueva:
+
+```
+EMAIL_FROM = inmobiliariacercatrova@gmail.com
+SMTP_USER  = inmobiliariacercatrova@gmail.com
+SMTP_PASS  = <app password de 16 caracteres de esa cuenta>
+```
+
+**Verificado con un envío real** (no solo con la config): `transporter.verify()`
+autenticó OK y el mail salió con `envelope.from = inmobiliariacercatrova@gmail.com`.
+
+Se documentó la trampa en `.env.example` para que no vuelva a pasar.
+
+### 2. ✅ Único admin — inmobiliariacercatrova@gmail.com
+
+`createDefaultAdmin()` busca por **email exacto** (`findOne({ where: { email } })`),
+no por "existe algún admin". Sobre una base vacía da lo mismo: no hay ningún
+admin previo, así que crea exactamente uno.
+
+Variables actualizadas: `ADMIN_EMAIL`, `ADMIN_PASSWORD` (12 caracteres —
+el mínimo que acepta el guard B3), `ADMIN_NAME=CercaTrova`,
+`ADMIN_SURNAME=Inmobiliaria`.
+
+**Verificado con query directa después del reinicio:**
+
+```
+select id,email,role from users where role='admin';
+  → 1 fila:  id=1  inmobiliariacercatrova@gmail.com  (admin)
+  → total de usuarios en la base: 1
+```
+
+Log de arranque: `🟢 Admin creado: inmobiliariacercatrova@gmail.com`.
+
+> ⚠️ La password del `.env` **solo se usa al CREAR el admin en una base vacía**.
+> Cambiarla ahí después no cambia la del usuario ya creado: eso se hace desde la
+> app (`PATCH /users/me`), que además revoca la sesión.
+
+### 3. ✅ Limpieza total de base de datos y Cloudinary
+
+**Cloudinary primero** (los `public_id` se leyeron ANTES de truncar, si no se
+perdían las referencias): **131 imágenes eliminadas, 0 fallos.**
+
+| Carpeta | Borradas | Nota |
+|---|---|---|
+| `properties/` | 84 | 62 referenciadas en la DB + **22 huérfanas** de propiedades ya borradas cuya limpieza había fallado en su momento |
+| `posts/` | 5 | |
+| `userPhotoProfile/` | 11 | |
+| raíz | 31 | 6 demos de Cloudinary (`cld-sample*`, `sample`) + 25 archivos de jun-2025 anteriores al código actual |
+
+**Conservado a propósito:** `logo-cercatrova-email_qlwxhv` — está referenciado en
+`email-template.ts:1` (`LOGO_URL`) y aparece en **todos** los emails. Borrarlo
+habría dejado las plantillas con la imagen rota.
+
+**Base de datos:** `TRUNCATE ... RESTART IDENTITY CASCADE` sobre **17 tablas**
+(IDs reseteados a 1, deseable para arrancar limpio en producción).
+
+- **Conservadas:** `property_types` (7 tipos — es catálogo real, decisión
+  confirmada: sin ellos no se puede publicar ninguna propiedad) y `migrations`
+  (8 filas — perder el historial obligaría a re-correr todo el set).
+- **Vaciadas:** `users`, `property`, `property_images`, `comments`, `ratings`,
+  `favorites`, `notifications`, `failed_emails`, `property_requests`,
+  `search_preferences`, `user_search_feedback`, `posts`, `post_comments`,
+  `post_likes`, `page_visits`, `property_views`, `filter_usages`.
+- **No se tocó ninguna estructura**: cero `DROP TABLE`, cero cambios de schema.
+
+### 4. ✅ Verificación post-limpieza
+
+| Prueba | Resultado |
+|---|---|
+| `npm run build` | ✅ limpio |
+| `npm test` | ✅ 14/14 |
+| Arranque contra la base vacía | ✅ `unaccent` verificada, admin creado, transporte SMTP activo, sin errores |
+| Login con la cuenta nueva | ✅ 201, `role: admin`, sin `password` en la respuesta |
+| `GET /properties` con base vacía | ✅ 200 · `{ data: [], meta: { totalItems: 0 } }` |
+| `GET /properties/filter` con base vacía | ✅ 200 · idem (también con filtros y `sortBy=rating`) |
+| `GET /properties/filters/locations` | ✅ 200 · arrays vacíos |
+| `GET /property-types` | ✅ 200 · los 7 tipos conservados |
+| Los 19 `GET /stats/*` con base vacía | ✅ 200 — **2 estaban rotos, ver abajo** |
+| Los 12 `GET /statistics/*` con base vacía | ✅ 200 |
+| **Alta end-to-end de una propiedad con imagen** | ✅ ver detalle abajo |
+
+**Prueba end-to-end completa** (creada y borrada, la base quedó limpia):
+
+```
+POST /properties (multipart + PNG real)  → 201, id=1   ✅ RESTART IDENTITY funcionó
+  imagen subida a Cloudinary             → properties/rhvuchngkvtd1ucfbv6y (verificada vía API: 8x8 png, 164 B)
+  agent asignado desde el token          → { id, name, surname, phone, photo }  ✅ sin email ni tokenVersion
+GET /properties                          → totalItems=1, ratingAverage=0
+GET /properties/filter?localidad=carlos  → n=1   ✅ unaccent operativo
+GET /properties/1                        → favoritesCount=0, imgs=1
+GET /properties/filters/locations        → { localidades:["Villa Carlos Paz"], barrios:["Centro"], zones:["Punilla"] }
+DELETE /properties/1                     → 200
+  imagen en Cloudinary tras el DELETE    → ✅ eliminada ("Resource not found")
+GET /properties (final)                  → totalItems=0
+```
+
+#### 🐛 Bug encontrado y corregido durante esta verificación
+
+`GET /stats/price/by-property-type` y `GET /stats/price/by-zone` respondían
+**500**. **No era el guard de división por cero** (esos endpoints no calculan
+porcentajes, no lo necesitan) ni tenía que ver con la base vacía: era
+`orderBy('avgPrice', 'DESC')` generando `ORDER BY avgprice` **sin comillas**.
+Postgres pliega a minúsculas los identificadores sin comillar, y el alias del
+`SELECT` sí va comillado (`"avgPrice"`), así que nunca matcheaban —
+`no existe la columna «avgprice»`. **Fallaba siempre, con datos o sin ellos.**
+
+Es un bug preexistente que la auditoría original no detectó porque solo probó 2
+de los 22 endpoints de `/stats`. Corregido en `stats.service.ts` ordenando por la
+**expresión** en vez de por el alias (inmune al plegado de mayúsculas), y
+verificado: ambos responden **200** ahora.
+
+El guard de división por cero, por su parte, **sigue funcionando**: los 17
+endpoints restantes devuelven `[]`, `null` o ceros con la base vacía, ninguno rompe.
+
+### 📋 Estado final
+
+```
+Base de datos     0 filas en TODAS las tablas de datos
+                  users = 1  (solo el admin)
+                  property_types = 7  (catálogo conservado)
+                  migrations = 8  (historial intacto)
+
+Cloudinary        1 archivo del proyecto: logo-cercatrova-email_qlwxhv
+                  + 47 demos de fábrica en samples/ (ver nota)
+```
+
+> **Nota — `samples/` de Cloudinary (47 imágenes, 42 MB).** Aparecieron recién al
+> terminar el borrado: la API `root_folders()` de Cloudinary no las devolvió en
+> el inventario inicial (solo listó `posts`, `properties`, `userPhotoProfile`),
+> por eso el conteo inicial de 183 recursos no cuadraba con las 132 que había
+> listado. Son las imágenes demo que Cloudinary crea sola en toda cuenta nueva —
+> fechadas el 2025-06-22, el día de alta de la cuenta — y **no las tocó nadie
+> porque quedaban fuera del alcance aprobado.** Se pueden borrar sin ningún
+> riesgo (no las referencia ni el código ni la base) y liberarían 42 MB de los
+> 369 MB del plan gratuito. Queda a criterio.
 
 ---
 
@@ -410,8 +585,9 @@ backfill (**cero en `generica`**) y las nuevas nacen con su tipo
 - **Solución**: si el frontend no lo usa (todo el registro pasa por `/auth/register`), eliminarlo. Si se mantiene por compatibilidad, agregarle el mismo `@Throttle({ default: { limit: 5, ttl: 60_000 } })`.
 
 ### 16. 📋 DECISIÓN PENDIENTE — Gmail SMTP como transporte de envíos masivos
-- **Dónde**: `.env` (`SMTP_HOST=smtp.gmail.com`, `EMAIL_FROM=matidiazargentino21@gmail.com`) + `src/modules/notifications/email/email.service.ts`.
-- **Qué pasa**: al estar definida `SMTP_HOST`, el servicio usa Nodemailer/Gmail y **no** SendGrid. La causa está registrada en los datos: las 77 filas de `failed_emails` son todas `"Maximum credits exceeded"` de SendGrid (22–29 de julio) — se agotó la cuota del plan.
+- **Dónde**: `.env` (`SMTP_HOST=smtp.gmail.com`, `EMAIL_FROM=inmobiliariacercatrova@gmail.com` desde el 2026-08-04) + `src/modules/notifications/email/email.service.ts`.
+- **Qué pasa**: al estar definida `SMTP_HOST`, el servicio usa Nodemailer/Gmail y **no** SendGrid. La causa está registrada en los datos: las 77 filas que tenía `failed_emails` eran todas `"Maximum credits exceeded"` de SendGrid (22–29 de julio) — se agotó la cuota del plan. *(La tabla se vació en la limpieza del 2026-08-04; el dato queda acá como registro.)*
+- **Estado 2026-08-04**: cambió la **cuenta** (ahora `inmobiliariacercatrova@gmail.com`, con sus propias credenciales SMTP), pero **no el transporte**: sigue siendo Gmail SMTP y el análisis de abajo sigue vigente sin cambios.
 - **Por qué importa**: `broadcastNewProperty()` y `handleNewPost()` mandan a **todos** los usuarios en cada publicación. Gmail SMTP tiene un tope duro (~500 destinatarios/día) y no está pensado para envío transaccional en volumen: al crecer la base, los envíos se van a cortar de nuevo y se arriesga que Google marque la cuenta. Además un remitente `@gmail.com` para una plataforma perjudica la entregabilidad (SPF/DKIM/DMARC del dominio propio).
 - **Solución**: mover el envío a un proveedor transaccional con dominio propio verificado (SendGrid pago, Resend, Amazon SES) y usar un `EMAIL_FROM` del dominio de CercaTrova. El código ya soporta ambos transportes sin cambios: alcanza con quitar `SMTP_HOST` del `.env` y poner una `SENDGRID_API_KEY` con cuota.
 

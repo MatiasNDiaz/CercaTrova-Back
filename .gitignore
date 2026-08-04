@@ -46,6 +46,10 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Backups de base de datos — contienen datos personales de usuarios reales
+# (emails, teléfonos, hashes de password). NUNCA versionar.
+/backups
+
 # Runtime data
 pids
 *.pid
