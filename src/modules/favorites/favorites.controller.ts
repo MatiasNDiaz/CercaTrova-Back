@@ -3,11 +3,16 @@ import { FavoritesService } from './favorites.service';
 import { Role } from '../users/enums/role.enum';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 
 // 🔒 SEGURIDAD (C5): el userId se toma SIEMPRE del token (@GetUser), nunca
 // de un parámetro de URL — un usuario solo puede operar sobre SUS favoritos.
-@UseGuards(JwtAuthGuard)
+// 🔒 RolesGuard es OBLIGATORIO junto a @Roles: sin él, los @Roles(Role.USER)
+// de abajo NO se aplican y son decorativos (verificado: un ADMIN entraba a las
+// 4 rutas). Es exactamente el defecto que causó C3/C4/C6 — se corrige acá para
+// que nadie copie el patrón a un endpoint donde sí importe.
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('favorites')
 export class FavoritesController {
   constructor(private readonly favoritesService: FavoritesService) {}

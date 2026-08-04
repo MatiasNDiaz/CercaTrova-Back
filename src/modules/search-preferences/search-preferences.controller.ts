@@ -2,12 +2,19 @@ import { Controller, Post, Patch, Get, Body, UseGuards, Req, Param } from '@nest
 import { SearchPreferencesService } from './search-preferences.service';
 import { CreateSearchPreferenceDto } from './dto/create-search-preference.dto';
 import { UpdateSearchPreferenceDto } from './dto/update-search-preference.dto';
-import { AuthGuard } from '@nestjs/passport';
 import { Role } from '../users/enums/role.enum';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 
-@UseGuards(AuthGuard('jwt'))
+// 🔒 Dos correcciones respecto de la versión anterior:
+//  1. `AuthGuard('jwt')` → `JwtAuthGuard`, que es el guard del proyecto (el
+//     único que respeta `@Public()`); usar el de passport directo rompía la
+//     convención y no habría respetado un `@Public()` futuro.
+//  2. `RolesGuard` sube a nivel de clase: sin él, el `@Roles(Role.USER)` del
+//     POST era decorativo (verificado: un ADMIN podía crear preferencias).
+//     La ruta admin de abajo ya no necesita repetir su propio @UseGuards.
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('search-preferences')
 export class SearchPreferencesController {
   constructor(private readonly service: SearchPreferencesService) {}
@@ -32,9 +39,9 @@ export class SearchPreferencesController {
   }
 
   // 🔒 SEGURIDAD (C6): sin RolesGuard, el @Roles(ADMIN) era decorativo y
-  // cualquier logueado leía las preferencias (datos personales) de otros
+  // cualquier logueado leía las preferencias (datos personales) de otros.
+  // El RolesGuard ahora viene del nivel de clase.
   @Roles(Role.ADMIN)
-  @UseGuards(RolesGuard)
   @Get('user/:id')
   getByUserId(@Param('id') id: string) {
     return this.service.getByUser(Number(id));

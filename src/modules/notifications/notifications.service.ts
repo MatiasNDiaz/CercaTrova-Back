@@ -9,6 +9,7 @@ import { Property } from '../properties/entities/property.entity';
 import { EmailService } from './email/email.service';
 import { EmailTemplates } from './email/email-template';
 import { PropertyRequest, RequestStatus } from '../PropertyRequest/entities/PropertyRequest';
+import { NotificationType } from './enums/notification-type.enum';
 
 @Injectable()
 export class NotificationService {
@@ -144,6 +145,7 @@ export class NotificationService {
         coincidencias.map(({ pref, matched, totalCriteria }) =>
           this.repo.create({
             user: pref.user,
+            type: NotificationType.PROPIEDAD_MATCH,
             title: '¡Propiedad que te puede interesar!',
             message: `Encontramos una propiedad que cumple ${matched.length} de tus ${totalCriteria} criterios de búsqueda.`,
             propertyId: property.id,
@@ -208,6 +210,7 @@ export class NotificationService {
       usersToNotify.map((user) =>
         this.repo.create({
           user,
+          type: NotificationType.NUEVA_PROPIEDAD,
           title: 'Nueva propiedad publicada',
           message: `Se publicó: "${property.title}" en ${property.barrio}, ${property.localidad}.`,
           propertyId: property.id,
@@ -264,6 +267,7 @@ export class NotificationService {
       usersToNotify.map((user) =>
         this.repo.create({
           user,
+          type: NotificationType.CAMBIO_PRECIO,
           title: '¡Bajó el precio!',
           message: `"${property.title}" bajó de $${oldPrice.toLocaleString()} a $${property.price.toLocaleString()}.`,
           propertyId: property.id,
@@ -311,6 +315,7 @@ export class NotificationService {
       usersToNotify.map((user) =>
         this.repo.create({
           user,
+          type: NotificationType.NUEVA_PUBLICACION,
           title: 'Nueva publicación',
           message: `Publicamos algo nuevo: "${preview}"`,
         }),
@@ -360,7 +365,13 @@ export class NotificationService {
     const message = `${quien} respondió a tu comentario: "${preview}"`;
 
     await this.repo.save(
-      this.repo.create({ user: owner, title, message, propertyId: null }),
+      this.repo.create({
+        user: owner,
+        type: NotificationType.RESPUESTA_COMENTARIO,
+        title,
+        message,
+        propertyId: null,
+      }),
     );
 
     if (!owner.email) return;
@@ -390,6 +401,7 @@ export class NotificationService {
 
     await this.repo.save(this.repo.create({
       user: request.user,
+      type: NotificationType.ESTADO_SOLICITUD,
       title,
       message,
     }));
@@ -500,7 +512,11 @@ export class NotificationService {
   // -----------------------------------------------------
   // HELPER PRIVADO ADMIN — ahora con relatedUserId 👈
   // -----------------------------------------------------
+  // `type` va PRIMERO y es obligatorio a propósito: al agregarlo como
+  // parámetro requerido, el compilador obliga a clasificar cualquier
+  // notificación de admin nueva en vez de dejarla caer en el fallback.
   private async createAdminNotification(
+    type: NotificationType,
     title: string,
     message: string,
     propertyId?: number,
@@ -514,6 +530,7 @@ export class NotificationService {
       admins.map((admin) =>
         this.repo.create({
           user: admin,
+          type,
           title,
           message,
           propertyId: propertyId ?? null,
@@ -539,6 +556,7 @@ export class NotificationService {
   // -----------------------------------------------------
   async notifyAdminNewUser(newUser: { id: number; name: string; email: string }) {
     await this.createAdminNotification(
+      NotificationType.ADMIN_NUEVO_USUARIO,
       'Nuevo usuario registrado',
       `${newUser.name} (${newUser.email}) se registró en la plataforma.`,
       null,
@@ -559,6 +577,7 @@ export class NotificationService {
      relatedUserId: number; // 👈 agregar
   }) {
     await this.createAdminNotification(
+      NotificationType.ADMIN_NUEVO_COMENTARIO,
       'Nuevo comentario en propiedad',
       `${data.userName} comentó en "${data.propertyTitle}": "${data.commentPreview.slice(0, 80)}${data.commentPreview.length > 80 ? '...' : ''}"`,
       data.propertyId,
@@ -578,6 +597,7 @@ export class NotificationService {
      relatedUserId: number; // 👈 agregar
   }) {
     await this.createAdminNotification(
+      NotificationType.ADMIN_NUEVA_VALORACION,
       'Nueva valoración en propiedad',
       `${data.userName} valoró "${data.propertyTitle}" con ${data.score} estrella${data.score !== 1 ? 's' : ''}.`,
       data.propertyId,
@@ -597,6 +617,7 @@ export class NotificationService {
      relatedUserId: number; // 👈 agregar
   }) {
     await this.createAdminNotification(
+      NotificationType.ADMIN_NUEVA_SOLICITUD,
       'Nueva solicitud de publicación',
       `${data.userName} solicitó publicar una propiedad en ${data.direccion}, ${data.barrio}, ${data.localidad}.`,
       null,
@@ -615,6 +636,7 @@ export class NotificationService {
      relatedUserId: number; // 👈 agregar
   }) {
     await this.createAdminNotification(
+      NotificationType.ADMIN_NUEVO_FAVORITO,
       'Propiedad guardada en favoritos',
       `${data.userName} guardó "${data.propertyTitle}" en sus favoritos.`,
       data.propertyId,
@@ -656,6 +678,7 @@ export class NotificationService {
         : data.commentPreview;
 
     await this.createAdminNotification(
+      NotificationType.ADMIN_COMENTARIO_PUBLICACION,
       'Nuevo comentario en una publicación',
       `${data.userName} comentó tu publicación sobre "${tema}": "${preview}"`,
       null,

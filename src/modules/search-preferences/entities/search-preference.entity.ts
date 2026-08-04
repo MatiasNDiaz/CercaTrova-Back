@@ -5,13 +5,19 @@ import {
   ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
-  JoinColumn
+  JoinColumn,
+  Index
 } from 'typeorm';
 import { User } from 'src/modules/users/entities/user.entity';
-import { typeOfProperty } from '../dto/enumTypeOfProperty';
 import { PropertyType } from 'src/modules/typeOfProperty/entities/typeOfProperty.entity';
 import { OperationType } from 'src/modules/properties/dto/enumsStatusProperty';
 
+// Un usuario tiene UNA sola preferencia de búsqueda. La constraint es lo que
+// garantiza de verdad que `POST /search-preferences` repetido no duplique:
+// el upsert del service cierra la ventana normal, pero dos requests
+// simultáneas la podían atravesar igual. Duplicar acá significa emails
+// repetidos por cada propiedad nueva (ver el docstring de `create()`).
+@Index(['user'], { unique: true })
 @Entity('search_preferences')
 export class SearchPreference {
   @PrimaryGeneratedColumn()

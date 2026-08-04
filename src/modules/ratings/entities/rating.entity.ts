@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, Unique } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, Unique, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Property } from '../../properties/entities/property.entity';
 
@@ -6,6 +6,9 @@ import { Property } from '../../properties/entities/property.entity';
 // propiedad — la constraint frena a nivel DB los duplicados por carrera
 // que el findOne del service no puede evitar (verificado: sin duplicados
 // preexistentes en la DB antes de agregarla)
+// 'userId' ya queda cubierto por el prefijo del UNIQUE de abajo; 'propertyId'
+// no tenía índice y lo usan el promedio del catálogo y el ranking best-rated.
+@Index(['propertyId'])
 @Unique(['userId', 'propertyId'])
 @Entity('ratings')
 export class Rating {

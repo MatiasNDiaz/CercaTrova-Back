@@ -23,6 +23,23 @@ import { PropertyImagesService } from '../ImagesProperty/propertyImages.service'
 import { NotificationService } from '../notifications/notifications.service';
 import { StatusProperty } from './dto/enumsStatusProperty';
 
+/**
+ * Campos del agente que SÍ pueden viajar en una respuesta pública.
+ *
+ * 🔒 Los endpoints de propiedades son `@Public()` y cargaban la relación
+ * `agent` completa, con lo cual cualquier visitante anónimo recibía el `email`,
+ * el `tokenVersion`, `notifyBroadcast`, `profileIncomplete` y `authProvider` del
+ * administrador. `tokenVersion` incluso revela cuántas veces cerró sesión o
+ * cambió la contraseña.
+ *
+ * Se dejan solo los datos de contacto que tiene sentido publicar de un agente
+ * inmobiliario. El email queda AFUERA a propósito: el contacto del sitio va por
+ * teléfono y por el formulario, no hace falta exponerlo al scraping.
+ *
+ * Mismo criterio que `USER_PUBLIC_FIELDS` en `posts.service.ts`.
+ */
+const AGENT_PUBLIC_FIELDS = ['id', 'name', 'surname', 'phone', 'photo'] as const;
+
 @Injectable()
 export class PropertiesService {
   private readonly logger = new Logger(PropertiesService.name);
@@ -44,27 +61,73 @@ export class PropertiesService {
     private readonly propertyImagesService: PropertyImagesService, // inyectado
   ) {}
   
-  // ... findAll & findOne se mantienen sin cambios (igual que tenías)
-  async findAll(): Promise<any[]> {
+  /**
+   * Adjunta `ratingAverage` a un lote de propiedades con UNA sola query.
+   *
+   * Reemplaza el patrón N+1 que había en `findAll()` (una subconsulta AVG por
+   * cada propiedad, dentro de un `Promise.all`): con 200 propiedades eran 201
+   * queries. Acá se resuelve con un único GROUP BY sobre los ids de la página.
+   *
+   * Devuelve objetos planos (no entidades) porque es lo que ya consumía el
+   * frontend: la property tal cual más el campo calculado.
+   */
+  private async withRatingAverage<T extends { id: number }>(properties: T[]): Promise<(T & { ratingAverage: number })[]> {
+    if (properties.length === 0) return [];
+
+    const ids = properties.map((p) => p.id);
+    const rows = await this.propertyRepo
+      .createQueryBuilder('p')
+      .leftJoin('p.ratings', 'r')
+      .select('p.id', 'id')
+      .addSelect('COALESCE(AVG(r.score), 0)', 'avg')
+      .where('p.id IN (:...ids)', { ids })
+      .groupBy('p.id')
+      .getRawMany<{ id: number; avg: string }>();
+
+    const byId = new Map(rows.map((r) => [Number(r.id), Number(r.avg) || 0]));
+    return properties.map((p) => ({ ...p, ratingAverage: byId.get(p.id) ?? 0 }));
+  }
+
+  /**
+   * Listado paginado de propiedades.
+   *
+   * ⚠️ CAMBIO DE CONTRATO: antes devolvía un ARRAY plano con TODAS las
+   * propiedades; ahora devuelve `{ data, meta }` paginado, igual que
+   * `GET /properties/filter`. El endpoint no tenía ningún tope: con el catálogo
+   * creciendo, una request pública traía la tabla entera con 4 relaciones.
+   *
+   * Además se eliminó el N+1: había una subconsulta `AVG(rating.score)` POR
+   * PROPIEDAD dentro de un `Promise.all` (14 propiedades = 15 queries, 510 ms).
+   * Ahora `withRatingAverage()` lo resuelve con una sola query para la página.
+   *
+   * `agent` se carga con `leftJoin` + campos públicos, no con la relación
+   * completa: antes viajaban el email, el teléfono y el `tokenVersion` del
+   * agente en un endpoint público.
+   */
+  async findAll(page = 1, limit = 10): Promise<{ data: any[]; meta: any }> {
     try {
-      const properties = await this.propertyRepo.find({
-        relations: ['agent', 'ratings', 'typeOfProperty', 'images'],
-      });
-      
-      const result = await Promise.all(
-        properties.map(async (p) => {
-          const { avg } = await this.propertyRepo
-          .createQueryBuilder('property')
-          .leftJoin('property.ratings', 'rating')
-          .select('AVG(rating.score)', 'avg')
-          .where('property.id = :id', { id: p.id })
-            .getRawOne();
-          
-          return { ...p, ratingAverage: Number(avg) || 0 };
-        }),
-      );
-      
-      return result;
+      const [properties, total] = await this.propertyRepo
+        .createQueryBuilder('p')
+        .leftJoinAndSelect('p.typeOfProperty', 'type')
+        .leftJoinAndSelect('p.images', 'images')
+        .leftJoin('p.agent', 'agent')
+        .addSelect(AGENT_PUBLIC_FIELDS.map((f) => `agent.${f}`))
+        .orderBy('p.created_at', 'DESC')
+        .skip((page - 1) * limit)
+        .take(limit)
+        .getManyAndCount();
+
+      const data = await this.withRatingAverage(properties);
+
+      return {
+        data,
+        meta: {
+          totalItems: total,
+          itemCount: data.length,
+          totalPages: Math.ceil(total / limit),
+          currentPage: Number(page),
+        },
+      };
     } catch (e) {
       // (ERROR_FIXES R-20): un fallo interno de la DB es un 500, no un 400;
       // el mensaje genérico se mantiene y el detalle se loguea
@@ -78,32 +141,59 @@ export class PropertiesService {
     }
   }
   
+  /**
+   * Detalle público de una propiedad.
+   *
+   * 🔒 Dos cambios respecto de la versión anterior, que cargaba las relaciones
+   * enteras con `relations: [...]`:
+   *
+   *  1. `agent` y `referredBy` se cargan con `leftJoin` + `AGENT_PUBLIC_FIELDS`.
+   *     Antes viajaba el `User` completo (email, tokenVersion, flags internos)
+   *     en un endpoint sin autenticación.
+   *  2. `favorites` ya NO se devuelve. Traía la lista cruda de la tabla puente
+   *     (`[{user_id: 7, property_id: 16}, ...]`), o sea QUIÉNES marcaron la
+   *     propiedad como favorita — comportamiento de terceros expuesto a
+   *     cualquier visitante anónimo. Se reemplaza por `favoritesCount`, que es
+   *     lo único que la UI necesita.
+   */
   async findOne(id: number): Promise<any> {
-    const property = await this.propertyRepo.findOne({
-      where: { id },
-      relations: [
-        'agent',
-        'comments',
-        'ratings',
-        'favorites',
-        'referredBy',
-        'typeOfProperty',
-        'images',
-      ],
-    });
-    
+    const property = await this.propertyRepo
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.typeOfProperty', 'type')
+      .leftJoinAndSelect('p.images', 'images')
+      .leftJoinAndSelect('p.comments', 'comments')
+      .leftJoinAndSelect('p.ratings', 'ratings')
+      .leftJoin('p.agent', 'agent')
+      .addSelect(AGENT_PUBLIC_FIELDS.map((f) => `agent.${f}`))
+      .leftJoin('p.referredBy', 'referredBy')
+      .addSelect(AGENT_PUBLIC_FIELDS.map((f) => `referredBy.${f}`))
+      .where('p.id = :id', { id })
+      .getOne();
+
     if (!property) {
       throw new NotFoundException(`No existe la propiedad con ID ${id}`);
     }
-    
+
+    const favoritesCount = await this.propertyRepo
+      .createQueryBuilder('p')
+      .leftJoin('p.favorites', 'f')
+      .select('COUNT(f.property_id)', 'n')
+      .where('p.id = :id', { id })
+      .getRawOne<{ n: string }>();
+
+
     const { avg } = await this.propertyRepo
     .createQueryBuilder('property')
     .leftJoin('property.ratings', 'rating')
     .select('AVG(rating.score)', 'avg')
     .where('property.id = :id', { id })
     .getRawOne();
-    
-    return { ...property, ratingAverage: Number(avg) || 0 };
+
+    return {
+      ...property,
+      ratingAverage: Number(avg) || 0,
+      favoritesCount: Number(favoritesCount?.n ?? 0),
+    };
   }
   
   // -------------------------
@@ -368,7 +458,10 @@ async filter(filters: PropertyFilterDto) {
   const qb = this.propertyRepo.createQueryBuilder('p')
     .leftJoinAndSelect('p.typeOfProperty', 'type')
     .leftJoinAndSelect('p.images', 'images')
-    .leftJoinAndSelect('p.agent', 'agent');
+    // 🔒 El agente va con campos públicos, no con la relación entera: este
+    // endpoint es @Public() y antes devolvía su email y su tokenVersion.
+    .leftJoin('p.agent', 'agent')
+    .addSelect(AGENT_PUBLIC_FIELDS.map((f) => `agent.${f}`));
 
   // --- 1. PROCESAMIENTO DE BÚSQUEDA INTELIGENTE (NLP) ---
   let searchRemaining = "";
@@ -548,8 +641,13 @@ async filter(filters: PropertyFilterDto) {
 
   const [items, total] = await qb.getManyAndCount();
 
+  // El frontend necesita `ratingAverage` en las tarjetas del catálogo. Antes
+  // solo lo devolvía GET /properties; acá se agrega con UNA query extra para
+  // toda la página (no una por propiedad).
+  const data = await this.withRatingAverage(items);
+
   return {
-    data: items,
+    data,
     meta: {
       totalItems: total,
       itemCount: items.length,

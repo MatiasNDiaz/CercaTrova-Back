@@ -1,5 +1,5 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, JoinColumn,
+  Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, CreateDateColumn, JoinColumn, Index,
 } from 'typeorm';
 import { User } from 'src/modules/users/entities/user.entity';
 import { Post } from './post.entity';
@@ -14,6 +14,8 @@ import { Post } from './post.entity';
  * `isHidden` es la moderación blanda del admin: el comentario no se borra, se
  * deja de mostrar a los usuarios comunes (el admin lo sigue viendo, marcado).
  */
+@Index(['postId'])
+@Index(['parentCommentId'])
 @Entity('post_comments')
 export class PostComment {
   @PrimaryGeneratedColumn()

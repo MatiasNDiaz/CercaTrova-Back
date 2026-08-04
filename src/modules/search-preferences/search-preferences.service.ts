@@ -26,7 +26,24 @@ export class SearchPreferencesService {
     });
   }
 
+  /**
+   * Alta de preferencias — es un UPSERT, no un INSERT ciego.
+   *
+   * 🐛 Antes creaba una fila nueva en cada POST. Como `getByUser()` usa
+   * `findOne`, el usuario solo veía la PRIMERA y ni se enteraba de las otras;
+   * pero `findAllWithUsers()` —que es lo que recorre `handleNewProperty()` para
+   * el matching— las recorría TODAS. Resultado: un usuario que tocaba "Guardar"
+   * tres veces recibía 3 notificaciones y 3 emails idénticos por cada propiedad
+   * nueva que matcheara, sin ninguna forma de deshacerlo desde la UI.
+   * (Verificado en la auditoría: 3 POST → filas id 5, 6 y 7.)
+   *
+   * Un usuario tiene UNA sola preferencia de búsqueda, así que repetir el POST
+   * ahora actualiza la existente en vez de duplicarla.
+   */
   async create(userId: number, dto: CreateSearchPreferenceDto) {
+    const existente = await this.getByUser(userId);
+    if (existente) return this.update(userId, dto);
+
     // (B2): excepción HTTP real en vez de Error genérico (evita 500)
     const user = await this.usersService.getUserById(userId);
     if (!user) throw new NotFoundException('Usuario no encontrado');

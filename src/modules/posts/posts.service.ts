@@ -259,7 +259,19 @@ export class PostsService {
       .createQueryBuilder('comment')
       .leftJoin('comment.user', 'user')
       .addSelect(USER_PUBLIC_FIELDS.map((f) => `user.${f}`))
-      .leftJoinAndSelect('comment.replies', 'reply')
+      // 🐛 FIX: el filtro de respuestas ocultas va en el ON del LEFT JOIN, NO
+      // en el WHERE. Antes estaba como `andWhere('(reply.id IS NULL OR
+      // reply.isHidden = false)')` y eso descartaba la fila entera cuando un
+      // comentario raíz tenía respuestas y TODAS estaban ocultas: no quedaba
+      // ninguna fila que cumpliera la condición, así que el comentario PADRE
+      // —visible y legítimo— desaparecía del listado público. Con la condición
+      // en el ON, las respuestas ocultas simplemente no se adjuntan y el
+      // comentario raíz se devuelve igual, con `replies: []`.
+      .leftJoinAndSelect(
+        'comment.replies',
+        'reply',
+        includeHidden ? undefined : 'reply.isHidden = false',
+      )
       .leftJoin('reply.user', 'replyUser')
       .addSelect(USER_PUBLIC_FIELDS.map((f) => `replyUser.${f}`))
       .where('comment.postId = :postId', { postId })
@@ -269,9 +281,6 @@ export class PostsService {
 
     if (!includeHidden) {
       qb.andWhere('comment.isHidden = false');
-      // El join de respuestas es LEFT: esta condición va en el ON, no en el
-      // WHERE, para no descartar comentarios que no tengan respuestas.
-      qb.andWhere('(reply.id IS NULL OR reply.isHidden = false)');
     }
 
     return qb.getMany();

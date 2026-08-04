@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntP
 import { RatingsService } from './ratings.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { Role } from '../users/enums/role.enum';
@@ -10,15 +11,18 @@ import { Role } from '../users/enums/role.enum';
 export class RatingsController {
   constructor(private readonly ratingsService: RatingsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  // 🔒 Sin RolesGuard el @Roles(Role.USER) era decorativo y un ADMIN podía
+  // valorar propiedades (verificado en la auditoría). Valorar es una acción de
+  // usuario: el admin es quien publica, no quien puntúa.
+  // El id sale del token vía @GetUser, no de @Req() — convención del repo.
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.USER)
   @Post(':propertyId')
   async rate(
     @Param('propertyId', ParseIntPipe) propertyId: number,
     @Body() dto: CreateRatingDto,
-    @Req() req
+    @GetUser('id') userId: number,
   ) {
-    const userId = req.user.id;
     return this.ratingsService.rateProperty(userId, propertyId, dto.score);
   }
 

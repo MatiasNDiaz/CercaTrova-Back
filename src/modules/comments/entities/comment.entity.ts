@@ -1,7 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Property } from '../../properties/entities/property.entity';
 
+// Índices de FK: Postgres NO los crea solo. 'propertyId' lo usa el listado de
+// comentarios de cada propiedad y 'userId' el dashboard "mis comentarios";
+// además ambos aceleran el CASCADE al borrar una propiedad o un usuario.
+@Index(['propertyId'])
+@Index(['userId'])
 @Entity('comments')
 export class Comment {
   @PrimaryGeneratedColumn()

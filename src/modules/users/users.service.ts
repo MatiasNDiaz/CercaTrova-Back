@@ -48,8 +48,14 @@ export class UsersService {
 
     // 2. Guardar la URL en la propiedad 'photo' de la entidad
     user.photo = result.secure_url;
-    
-    return await this.userRepository.save(user);
+
+    const saved = await this.userRepository.save(user);
+    // 🔒 SEGURIDAD: acá `user` viene de findOneBy (sin password por el
+    // select: false), así que el hash no debería estar presente — el delete
+    // es defensivo para que la garantía "ningún método de UsersService
+    // devuelve password" valga por construcción y no por accidente.
+    delete saved.password;
+    return saved;
   }
 
 
@@ -152,7 +158,16 @@ export class UsersService {
         user.profileIncomplete = false;
       }
 
-      return await this.userRepository.save(user);
+      const saved = await this.userRepository.save(user);
+
+      // 🔒 SEGURIDAD: nunca devolver el password (ni hasheado) al caller —
+      // mismo criterio que createUser(). `ensureExists` carga el usuario SIN
+      // password (select: false), pero el Object.assign de arriba le inyecta
+      // el hash recién calculado y save() lo devuelve en la respuesta HTTP.
+      // Sin este delete, PATCH /users/me y PATCH /users/:id filtraban el hash
+      // bcrypt — y en el caso admin, el hash de OTRO usuario.
+      delete saved.password;
+      return saved;
     } catch (error) {
       // 🧱 PATRÓN unique violation → 409: el único unique de la entidad es
       // el email; si el update lo pisa con uno ya usado, respondemos claro

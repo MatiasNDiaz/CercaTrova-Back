@@ -198,9 +198,9 @@ export const EmailTemplates = {
               <!-- El background-color va ANTES del gradiente: Outlook ignora
                    linear-gradient y sin el color plano el banner queda blanco,
                    con el texto blanco encima volviéndose invisible. -->
-              <td style="background-color:${BRAND_GREEN}; background-image:linear-gradient(135deg, #0b7a4b 0%, #0f8c58 100%); border-radius:16px 16px 0 0; padding:32px 40px; text-align:center;">
-                <img src="${LOGO_URL}" alt="CercaTrova" style="height:60px; width:auto; display:inline-block; margin-bottom:16px; border-radius:8px;" />
-                <p style="color:rgba(255,255,255,0.85); font-size:13px; margin:0; letter-spacing:2px; text-transform:uppercase; font-weight:600;">Inmobiliaria CercaTrova</p>
+              <td style="background-color:${BRAND_GREEN}; background-image:linear-gradient(135deg, #0b7a4b 0%, #0f8c58 100%); border-radius:16px 16px 0 0; padding:18px 40px; text-align:center;">
+                <img src="${LOGO_URL}" alt="CercaTrova" style="height:44px; width:auto; display:inline-block; margin-bottom:8px; border-radius:8px;" />
+                <p style="color:#ffffff; font-size:13px; margin:0; letter-spacing:2px; text-transform:uppercase; font-weight:600;">Inmobiliaria CercaTrova</p>
               </td>
             </tr>
 
@@ -256,6 +256,15 @@ export const EmailTemplates = {
    *
    * Se muestran hasta 4 y, si hay más, el label lo aclara en vez de esconderlas
    * sin avisar. Eso además le pone un techo al peso del email.
+   *
+   * El ARCHIVO que se pide es de 800×600, aunque en el layout se vea de apenas
+   * ~130px de ancho (el `<td width="25%">` la reduce): el `<img>` solo cambia
+   * cómo se MUESTRA la miniatura, no el peso real del archivo. Si se pidiera
+   * recortada al tamaño de pantalla (como antes, 300×220), al usuario hacerle
+   * click para verla grande — la mayoría de los clientes de email abren la
+   * imagen en su tamaño real al tocarla — se encontraba con una foto pixelada.
+   * 800×600 no es la resolución de la portada (1200×750) para no duplicar el
+   * peso del email cuatro veces, pero alcanza para que se vea nítida ampliada.
    */
   thumbStrip: (urls: string[]) => {
     const thumbs = urls.slice(0, 4);
@@ -271,7 +280,7 @@ export const EmailTemplates = {
         <tr>
           ${thumbs.map((url, i) => `
             <td width="${Math.floor(100 / thumbs.length)}%" valign="top" style="padding:0 3px;">
-              <img src="${cropped(url, 300, 220)}" alt="Foto ${i + 2} de la propiedad"
+              <img src="${cropped(url, 800, 600)}" alt="Foto ${i + 2} de la propiedad"
                 style="width:100%; max-width:100%; height:auto; display:block; border-radius:7px; border:1px solid ${HAIRLINE};" />
             </td>`).join('')}
         </tr>
@@ -380,7 +389,7 @@ export const EmailTemplates = {
 
     return `
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
-      style="background-color:#ffffff; border:1px solid ${HAIRLINE}; border-radius:14px; margin:0 0 8px 0;">
+      style="background-color:#ffffff; border:1.5px solid ${BRAND_BORDER}; border-radius:14px; margin:0 0 8px 0;">
 
       ${cover ? `
       <!-- FOTO PRINCIPAL — a sangre, sin margen contra los bordes del flyer.

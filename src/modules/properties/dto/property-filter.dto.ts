@@ -12,6 +12,28 @@ export enum PropertySortBy {
   RATING = 'rating',
 }
 
+/**
+ * Paginación de `GET /properties` (el listado simple, sin filtros).
+ *
+ * Va aparte de `PropertyFilterDto` a propósito: con `forbidNonWhitelisted`,
+ * reusar el DTO de filtros haría que `GET /properties?localidad=X` aceptara un
+ * criterio que ese endpoint no aplica. Acá solo se acepta lo que se usa.
+ */
+export class PropertyPaginationDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+}
+
 export class PropertyFilterDto {
   // --- ORDENAMIENTO ---
   @IsOptional()
@@ -37,9 +59,13 @@ export class PropertyFilterDto {
   limit?: number = 10;
 
   // --- FILTROS DE TEXTO ---
-  @IsOptional()
-  @IsString()
-  title?: string;
+  // ❌ ELIMINADO: `title`. Estaba declarado pero `PropertiesService.filter()`
+  // nunca lo desestructuraba ni lo usaba en ninguna condición — el DTO lo
+  // aceptaba y devolvía 200 sin filtrar nada, así que el frontend podía creer
+  // que funcionaba (verificado: mismos 10 resultados con y sin él).
+  // La búsqueda por título ya la cubre `?search=`, que incluye `p.title` en su
+  // bloque de búsqueda textual junto con localidad, barrio y descripción.
+  // Se elimina en vez de implementarlo para no duplicar lo que hace `search`.
 
   @IsOptional()
   @IsString()

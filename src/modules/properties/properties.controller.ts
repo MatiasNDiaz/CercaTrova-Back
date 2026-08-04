@@ -28,7 +28,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 import { TrackingService } from '../tracking/tracking.service';
 import { getVisitorId } from '../tracking/visitor-id.middleware';
-import { PropertyFilterDto } from './dto/property-filter.dto';
+import { PropertyFilterDto, PropertyPaginationDto } from './dto/property-filter.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 type MulterFile = Express.Multer.File;
@@ -41,11 +41,13 @@ export class PropertiesController {
     private readonly trackingService: TrackingService,
   ) {}
 
+  // ⚠️ CAMBIO DE CONTRATO: ahora devuelve `{ data, meta }` paginado en vez de
+  // un array plano con TODAS las propiedades (ver findAll() en el service).
+  // El catálogo del frontend usa GET /properties/filter, que ya era paginado.
   @Public()
   @Get()
-  findAll() {
-    return this.propertiesService.findAll();
-
+  findAll(@Query() pagination: PropertyPaginationDto) {
+    return this.propertiesService.findAll(pagination.page, pagination.limit);
   }
 
   // `OptionalJwtAuthGuard` no exige sesión, pero puebla `req.user` cuando la

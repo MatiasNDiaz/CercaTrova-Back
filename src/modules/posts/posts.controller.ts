@@ -89,7 +89,14 @@ export class PostsController {
   }
 
   // ── COMENTARIOS ────────────────────────────────────────────────
+  // `OptionalJwtAuthGuard` es OBLIGATORIO acá, no decorativo: sin él,
+  // `JwtAuthGuard` cortocircuita por el `@Public()` sin ejecutar passport y
+  // `req.user` queda vacío INCLUSO para el admin logueado — con lo cual
+  // `role === Role.ADMIN` era siempre false y el admin no podía ver (ni por
+  // lo tanto revertir) los comentarios que él mismo había ocultado.
+  // Mismo patrón que `GET /posts` y `GET /posts/:id` de más arriba.
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id/comments')
   findComments(
     @Param('id', ParseIntPipe) id: number,

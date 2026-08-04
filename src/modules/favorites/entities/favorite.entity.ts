@@ -1,7 +1,10 @@
-import { Entity, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Entity, ManyToOne, PrimaryColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Property } from '../../properties/entities/property.entity';
 
+// 'user_id' ya queda cubierto por el prefijo de la PK compuesta; 'property_id'
+// no, y lo usan el ranking most-favorited y el CASCADE al borrar una propiedad.
+@Index(['property_id'])
 @Entity('favorites')
 export class Favorite {
   @PrimaryColumn()

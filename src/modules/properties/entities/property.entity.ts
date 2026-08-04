@@ -1,4 +1,4 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColumn, UpdateDateColumn, CreateDateColumn } from "typeorm"
+import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, OneToMany, JoinColumn, UpdateDateColumn, CreateDateColumn, Index } from "typeorm"
 import { User } from "src/modules/users/entities/user.entity";
 import { UserSearchFeedback } from '../../requests/entities/request.entity';
 import { Favorite } from 'src/modules/favorites/entities/favorite.entity';
@@ -9,6 +9,10 @@ import { PropertyImages } from "src/modules/ImagesProperty/entities/ImagesProper
 import { IsEnum } from "class-validator";
 import { OperationType, StatusProperty } from "../dto/enumsStatusProperty";
 
+// El catálogo (GET /properties/filter) SIEMPRE filtra por status y, por
+// defecto, ordena por created_at DESC. Sin este índice cada página del
+// catálogo es un seq scan + sort de la tabla entera.
+@Index(['status', 'created_at'])
 @Entity('property')
 export class Property {
     @PrimaryGeneratedColumn()

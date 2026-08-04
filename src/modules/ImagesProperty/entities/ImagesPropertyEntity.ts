@@ -1,7 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, Index } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
 import { Exclude } from 'class-transformer';
 
+// Toda lectura de una propiedad trae sus imágenes por esta FK.
+@Index(['property'])
 @Entity("property_images")
 export class PropertyImages {
   @PrimaryGeneratedColumn()
