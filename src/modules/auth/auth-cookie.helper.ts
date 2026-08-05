@@ -20,10 +20,11 @@ function parseExpirationToMs(exp?: string): number {
 // de sesión. Antes login/google/logout usaban configuraciones distintas —
 // si set y clear difieren, algunos navegadores no borran la cookie.
 function baseOptions(): CookieOptions {
+  const isProd = process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: isProd ? 'none' : 'lax',
+    secure: isProd,
   };
 }
 

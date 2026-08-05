@@ -27,7 +27,7 @@ export class VisitorIdMiddleware implements NestMiddleware {
       visitorId = randomUUID();
       res.cookie(VISITOR_COOKIE, visitorId, {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         secure: process.env.NODE_ENV === 'production',
         maxAge: ONE_YEAR_MS,
       });
