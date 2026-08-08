@@ -7,7 +7,7 @@ import { Comment } from 'src/modules/comments/entities/comment.entity';
 import { PropertyType } from "src/modules/typeOfProperty/entities/typeOfProperty.entity";
 import { PropertyImages } from "src/modules/ImagesProperty/entities/ImagesPropertyEntity";
 import { IsEnum } from "class-validator";
-import { OperationType, StatusProperty } from "../dto/enumsStatusProperty";
+import { Currency, OperationType, StatusProperty } from "../dto/enumsStatusProperty";
 
 // El catálogo (GET /properties/filter) SIEMPRE filtra por status y, por
 // defecto, ordena por created_at DESC. Sin este índice cada página del
@@ -64,6 +64,12 @@ export class Property {
     @Column()
     patio!: boolean;
 
+    // A diferencia de `garage`/`patio`, lleva `default: false` explícito: sin él
+    // la columna sería NOT NULL sin default y el ALTER TABLE fallaría sobre las
+    // filas existentes.
+    @Column({ default: false })
+    aptoMascotas!: boolean;
+
     @Column({ type: 'int', nullable: true })
     supTotal!: number;
 
@@ -75,6 +81,31 @@ export class Property {
 
     @Column()
     price!: number;
+
+    /**
+     * Expensas mensuales. Opcional: no toda propiedad tiene (una casa no paga).
+     *
+     * ⚠️ SIEMPRE EN PESOS, sin importar `currency`. No es una simplificación:
+     * en el mercado local el inmueble se publica en dólares y las expensas se
+     * cobran en pesos — una casa de USD 85.000 no tiene expensas de USD 45.000.
+     * Por eso no tiene columna de moneda propia.
+     *
+     * `int` y no `decimal`: son montos mensuales redondeados, nadie publica
+     * expensas con centavos, y un `decimal` de TypeORM vuelve como STRING en las
+     * respuestas (obligaría a parsear en el frontend y a documentar la rareza).
+     */
+    @Column({ type: 'int', nullable: true })
+    expensas!: number | null;
+
+    // Moneda de `price`. Default USD porque todo el catálogo previo a esta
+    // columna estaba cargado en dólares (el frontend imprimía "USD" fijo), así
+    // que las filas viejas quedan bien sin backfill.
+    @Column({
+    type: 'enum',
+    enum: Currency,
+    default: Currency.USD,
+    })
+    currency!: Currency;
 
     @Column()
     @IsEnum(StatusProperty)

@@ -5,9 +5,11 @@ import {
   IsBoolean,
   IsInt,
   IsEnum,
+  IsOptional,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { OperationType, StatusProperty } from './enumsStatusProperty';
+import { Currency, OperationType, StatusProperty } from './enumsStatusProperty';
 
 export class CreatePropertyDto {
   @IsString()
@@ -74,7 +76,26 @@ export class CreatePropertyDto {
   @Type(() => Boolean)
   @IsBoolean()
   patio!: boolean;
-  
+
+  // Opcional: no bloquea la publicación si el admin no lo completa. Sin valor
+  // el backend lo deja en `false` (default de la columna).
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  aptoMascotas?: boolean;
+
+  /**
+   * Expensas mensuales EN PESOS. Opcional — una casa no tiene expensas.
+   *
+   * `@Min(0)` porque un monto negativo no tiene sentido; el 0 sí es válido y
+   * significa "sin expensas", distinto de no informarlas.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  expensas?: number;
+
   @Type(() => Number)
   @IsNumber()
   supTotal!: number;
@@ -90,6 +111,20 @@ export class CreatePropertyDto {
   @Type(() => Number)
   @IsNumber()
   price!: number;
+
+  /**
+   * Moneda del precio. Opcional: si no viene, el inicializador de abajo la deja
+   * en USD, que es lo que tenía todo el catálogo antes de que la columna
+   * existiera.
+   *
+   * El default se declara como inicializador de propiedad y NO con un
+   * `@Transform`: `JsonToDtoPipe` usa `plainToInstance`, que instancia la clase
+   * de verdad, así que el inicializador corre y el campo llega poblado al
+   * `propertyRepo.create(dto)` del service.
+   */
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency = Currency.USD;
 
   @IsEnum(StatusProperty)
   @IsNotEmpty()

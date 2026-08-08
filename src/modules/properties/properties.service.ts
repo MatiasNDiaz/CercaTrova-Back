@@ -71,6 +71,27 @@ export class PropertiesService {
    * Devuelve objetos planos (no entidades) porque es lo que ya consumía el
    * frontend: la property tal cual más el campo calculado.
    */
+  /**
+   * Ordena la galería de cada propiedad por `order ASC` (con `id` de desempate).
+   *
+   * En `findOne()` esto se resuelve con un `ORDER BY` en la query, que es lo
+   * correcto. Acá NO se puede: `findAll()` y `filter()` usan `skip`/`take`, y
+   * con un join one-to-many TypeORM pagina con una subconsulta `DISTINCT` sobre
+   * los ids — ordenar ahí por una columna de la relación joineada hace fallar la
+   * query ("column must appear in the SELECT DISTINCT list").
+   *
+   * El costo es despreciable: son como mucho 10 imágenes por propiedad y 100
+   * propiedades por página, sobre datos que ya están en memoria. Y mantiene el
+   * contrato parejo — `images` viene ordenado en las tres lecturas públicas, no
+   * solo en el detalle.
+   */
+  private sortImages<T extends { images?: { order?: number; id: number }[] }>(properties: T[]): T[] {
+    for (const p of properties) {
+      p.images?.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.id - b.id);
+    }
+    return properties;
+  }
+
   private async withRatingAverage<T extends { id: number }>(properties: T[]): Promise<(T & { ratingAverage: number })[]> {
     if (properties.length === 0) return [];
 
@@ -117,7 +138,7 @@ export class PropertiesService {
         .take(limit)
         .getManyAndCount();
 
-      const data = await this.withRatingAverage(properties);
+      const data = await this.withRatingAverage(this.sortImages(properties));
 
       return {
         data,
@@ -168,6 +189,16 @@ export class PropertiesService {
       .leftJoin('p.referredBy', 'referredBy')
       .addSelect(AGENT_PUBLIC_FIELDS.map((f) => `referredBy.${f}`))
       .where('p.id = :id', { id })
+      // Galería en el orden que eligió el admin por drag & drop. `id` desempata
+      // las filas que todavía conservan el `order: 0` del default de la
+      // migración (todas las imágenes cargadas antes de que existiera la
+      // columna), y así el resultado es determinista incluso sin reordenar.
+      // Acá se puede poner el ORDER BY sobre la relación sin riesgo porque esta
+      // query no pagina: en `findAll()` y `filter()`, que sí usan skip/take, la
+      // paginación DISTINCT de TypeORM rechaza ordenar por una columna joineada
+      // — ahí el orden se aplica en memoria (ver `sortImages`).
+      .orderBy('images.order', 'ASC')
+      .addOrderBy('images.id', 'ASC')
       .getOne();
 
     if (!property) {
@@ -279,6 +310,9 @@ async createWithImages(dto: CreatePropertyDto, images: MulterFile[], agentId?: n
       url: img.url,
       hash: img.hash,
       isCover: img.isCover,
+      // El frontend necesita el `order` de vuelta para poder mandar el reorder
+      // inmediatamente después de crear, sin tener que releer la propiedad.
+      order: img.order,
       publicId: img.publicId
     }))
   };
@@ -449,6 +483,8 @@ async filter(filters: PropertyFilterDto) {
     maxSupTotal,
     minSupCubierta,
     maxSupCubierta,
+    minExpensas,
+    maxExpensas,
     sortBy,
     order,
   } = filters;
@@ -564,6 +600,19 @@ async filter(filters: PropertyFilterDto) {
   if (maxSupCubierta) qb.andWhere('p.supCubierta <= :maxSupCubierta', { maxSupCubierta });
   if (maxAntiquity) qb.andWhere('p.antiquity <= :maxAntiquity', { maxAntiquity });
 
+  // ── EXPENSAS ──
+  // `minExpensas` deja afuera las propiedades sin expensas cargadas
+  // (`NULL >= x` es NULL, o sea falso): no cumplen "al menos X de expensas".
+  if (minExpensas) qb.andWhere('p.expensas >= :minExpensas', { minExpensas });
+
+  // `maxExpensas` SÍ las incluye, a propósito. Quien pone un tope de expensas
+  // está limitando su gasto mensual, y una propiedad sin expensas es el mejor
+  // caso posible para ese criterio — esconderla sería justo lo contrario de lo
+  // que pidió. Sin el `IS NULL` explícito, el `<=` las descartaría en silencio.
+  if (maxExpensas) {
+    qb.andWhere('(p.expensas IS NULL OR p.expensas <= :maxExpensas)', { maxExpensas });
+  }
+
   // Ubicación Manual
   if (barrio) qb.andWhere('unaccent(p.barrio) ILIKE unaccent(:barrio)', { barrio: `%${barrio}%` });
   if (direccion) qb.andWhere('unaccent(p.direccion) ILIKE unaccent(:direccion)', { direccion: `%${direccion}%` });
@@ -644,7 +693,7 @@ async filter(filters: PropertyFilterDto) {
   // El frontend necesita `ratingAverage` en las tarjetas del catálogo. Antes
   // solo lo devolvía GET /properties; acá se agrega con UNA query extra para
   // toda la página (no una por propiedad).
-  const data = await this.withRatingAverage(items);
+  const data = await this.withRatingAverage(this.sortImages(items));
 
   return {
     data,

@@ -118,6 +118,20 @@ export class PropertyFilterDto {
   @IsInt()
   maxSupCubierta?: number;
 
+  // Expensas mensuales EN PESOS (ver el docstring de la columna en la entidad).
+  // ⚠️ Asimetría deliberada en cómo tratan los NULL — ver `filter()` en el
+  // service: `maxExpensas` INCLUYE las propiedades sin expensas cargadas,
+  // `minExpensas` las excluye.
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  minExpensas?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  maxExpensas?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

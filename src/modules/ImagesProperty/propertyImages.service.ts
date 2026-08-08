@@ -48,6 +48,15 @@ export class PropertyImagesService {
     });
     const hasCover = existingImages.some(img => img.isCover);
 
+    // Las nuevas se encolan DESPUÉS de las que ya estaban: al editar una
+    // propiedad y sumar fotos, las existentes no se mueven de lugar. El máximo
+    // se calcula sobre las filas reales y no sobre `existingImages.length`
+    // porque los borrados dejan huecos en la secuencia (borrar la del medio no
+    // renumera al resto).
+    const nextOrder = existingImages.length > 0
+      ? Math.max(...existingImages.map(img => img.order ?? 0)) + 1
+      : 0;
+
     // Crear entidades
     const entities = uploads.map((u, index) =>
       this.imagesRepo.create({
@@ -56,9 +65,10 @@ export class PropertyImagesService {
         publicId: u.public_id,
         hash: u.asset_id,
         isCover: hasCover ? false : index === 0,
+        order: nextOrder + index,
       }),
     );
-    
+
     // Guardar y devolver
     const saved = await this.imagesRepo.save(entities);
 
@@ -122,8 +132,99 @@ export class PropertyImagesService {
   }
 
   // -------------------------------------------------------------------------
+  // REORDER: persiste el orden completo de la galería de una propiedad
+  // -------------------------------------------------------------------------
+  /**
+   * Reordena TODAS las imágenes de una propiedad de una sola vez.
+   *
+   * Recibe los ids en el orden deseado y asigna `order = índice`. La imagen que
+   * queda en la posición 0 pasa a ser la portada, manteniendo la invariante
+   * documentada en la entidad.
+   *
+   * ## Por qué exige la lista COMPLETA
+   *
+   * Se valida que `imageIds` contenga exactamente las imágenes de la propiedad
+   * —ni de más, ni de menos, sin repetidos— y se responde 400 si no. Aceptar un
+   * subconjunto obligaría a inventar una regla para las que faltan (¿al final?,
+   * ¿conservan su orden viejo, que ahora choca con los nuevos índices?), y esa
+   * regla implícita es justo el tipo de cosa que después nadie recuerda. Con la
+   * lista completa el estado resultante es siempre 0..n-1 sin huecos.
+   *
+   * También corta un IDOR silencioso: sin el chequeo de pertenencia, mandar el
+   * id de una imagen de OTRA propiedad la reasignaría de orden (y podría
+   * marcarla como portada) desde la URL de esta.
+   *
+   * ## Por qué en una transacción
+   *
+   * Son N updates de `order` más el traspaso de `isCover`. Si el proceso muere
+   * en el medio, la galería queda con órdenes duplicados y, peor, con dos
+   * portadas o ninguna. La transacción hace que se apliquen todos o ninguno.
+   */
+  async reorder(propertyId: number, imageIds: number[]) {
+    const property = await this.propertyRepo.findOne({ where: { id: propertyId } });
+    if (!property) {
+      throw new NotFoundException(`No existe la propiedad con ID ${propertyId}`);
+    }
+
+    const images = await this.imagesRepo.find({
+      where: { property: { id: propertyId } },
+    });
+
+    if (images.length === 0) {
+      throw new NotFoundException('La propiedad no tiene imágenes para reordenar');
+    }
+
+    const unique = new Set(imageIds);
+    if (unique.size !== imageIds.length) {
+      throw new BadRequestException('El orden tiene imágenes repetidas');
+    }
+
+    const owned = new Set(images.map(img => img.id));
+    if (imageIds.length !== owned.size || imageIds.some(id => !owned.has(id))) {
+      throw new BadRequestException(
+        `El orden tiene que incluir exactamente las ${owned.size} imágenes de la propiedad`,
+      );
+    }
+
+    await this.imagesRepo.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(PropertyImages);
+      for (const [index, id] of imageIds.entries()) {
+        // `update` por id y no `save(entity)`: el entity trae cargada la
+        // relación `property`, y un save completo reescribiría columnas que
+        // esta operación no tiene por qué tocar.
+        await repo.update(id, { order: index, isCover: index === 0 });
+      }
+    });
+
+    // Se recorre `images` (las entidades reales) y no `imageIds`, para no tener
+    // que buscar cada id en un Map y afirmar que existe: la validación de arriba
+    // ya garantiza que los dos conjuntos son idénticos, así que `indexOf` nunca
+    // devuelve -1. Con 10 imágenes como máximo, el costo es irrelevante.
+    return {
+      message: 'Orden de las imágenes actualizado correctamente.',
+      images: images
+        .map(img => ({
+          id: img.id,
+          order: imageIds.indexOf(img.id),
+          isCover: imageIds.indexOf(img.id) === 0,
+          url: img.url,
+        }))
+        .sort((a, b) => a.order - b.order),
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // SET AS COVER (existing single image)
   // -------------------------------------------------------------------------
+  /**
+   * Marca una imagen como portada.
+   *
+   * ⚠️ Ahora TAMBIÉN la mueve a la posición 0 y corre una posición al resto.
+   * Antes solo tocaba `isCover`, pero con el campo `order` eso dejaría la
+   * portada en el medio de la galería: la tarjeta del catálogo mostraría una
+   * foto y el detalle abriría con otra. Mantiene la invariante
+   * "`order = 0` ⇔ `isCover`" descrita en la entidad.
+   */
   async setAsCover(imageId: number) {
     const image = await this.imagesRepo.findOne({
       where: { id: imageId },
@@ -140,15 +241,25 @@ export class PropertyImagesService {
 
     const propertyId = image.property.id;
 
-    // 1) Poner todas las imágenes de esa propiedad en false
-    await this.imagesRepo.update(
-      { property: { id: propertyId } },
-      { isCover: false },
-    );
+    // La nueva portada primero; el resto conserva su orden relativo detrás.
+    const images = await this.imagesRepo.find({
+      where: { property: { id: propertyId } },
+      order: { order: 'ASC', id: 'ASC' },
+    });
+    const nuevoOrden = [
+      imageId,
+      ...images.filter(img => img.id !== imageId).map(img => img.id),
+    ];
 
-    // 2) Marcar esta imagen como portada
+    await this.imagesRepo.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(PropertyImages);
+      for (const [index, id] of nuevoOrden.entries()) {
+        await repo.update(id, { order: index, isCover: index === 0 });
+      }
+    });
+
     image.isCover = true;
-    await this.imagesRepo.save(image);
+    image.order = 0;
 
     return {
       message: 'Imagen establecida como portada correctamente.',
@@ -182,12 +293,18 @@ export class PropertyImagesService {
   }
 
   // -------------------------------------------------------------------------
-  // Si no hay portada para la propiedad, asigna la primera (order by id asc)
+  // Si no hay portada para la propiedad, asigna la primera de la galería
   // -------------------------------------------------------------------------
+  /**
+   * ⚠️ El criterio de "la primera" pasó de `id ASC` a `order ASC` (con `id` como
+   * desempate para las filas que todavía tengan el `order: 0` por defecto de la
+   * migración). Con `id ASC` la portada de reemplazo era la foto más vieja, que
+   * después del drag & drop puede estar última en la galería.
+   */
   async ensureCoverExists(propertyId: number) {
     const images = await this.imagesRepo.find({
       where: { property: { id: propertyId } },
-      order: { id: 'ASC' },
+      order: { order: 'ASC', id: 'ASC' },
     });
 
     if (images.length === 0) return;
@@ -202,7 +319,7 @@ export class PropertyImagesService {
   private async setNextImageAsCover(propertyId: number) {
     const images = await this.imagesRepo.find({
       where: { property: { id: propertyId } },
-      order: { id: 'ASC' },
+      order: { order: 'ASC', id: 'ASC' },
     });
 
     if (images.length === 0) return;

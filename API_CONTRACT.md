@@ -4,6 +4,16 @@
 >
 > Documento de **solo lectura**: describe la forma real de la API tal como responde HOY, no la intención ni el diseño deseado.
 
+## Novedades de la sesión 2026-08-08 (3 funcionalidades nuevas)
+
+Ver `FEATURES.md` para el detalle de implementación de cada una.
+
+| # | Novedad | Dónde |
+|---|---|---|
+| A | **`Property.currency`** (`'ARS' \| 'USD'`, NOT NULL, default `'USD'`) — el precio deja de ser un número sin unidad. Viaja en las 3 lecturas públicas. Opcional en create (default USD), opcional en update **sin default** (no vino = no se toca). | §2, §5 |
+| B | **`PropertyImages.order`** (int, NOT NULL, default 0) + **`PATCH /property-images/:propertyId/reorder`**. `GET /properties/:id`, `/properties` y `/properties/filter` devuelven las imágenes **ordenadas por `order ASC, id ASC`**. La imagen con `order = 0` es además la portada (`isCover`). | §5, §6 |
+| C | **`Property.expensas`** (int, nullable) y **`Property.aptoMascotas`** (boolean, default `false`), ambos opcionales en create y update. `expensas` es **siempre en pesos**, sin importar `currency`. Se suman `minExpensas`/`maxExpensas` a `GET /properties/filter`. | §5 |
+
 ## Novedades respecto de la versión anterior del documento
 
 La versión previa quedó desactualizada — describía el código de ANTES de la ronda de correcciones de `TestAPI.md`. Cambios verificados contra el código actual:
@@ -170,6 +180,10 @@ enum OperationType {
   ALQUILER          = 'alquiler',
   ALQUILER_TEMPORAL = 'temporal',   // ⚠️ NO es 'alquiler_temporal'
 }
+
+// Moneda de `Property.price`. Default 'USD' en la columna y en CreatePropertyDto.
+// ⚠️ NO aplica a `expensas`, que son SIEMPRE en pesos (ver §5).
+enum Currency { ARS = 'ARS', USD = 'USD' }
 
 // ── src/modules/properties/dto/property-filter.dto.ts ──
 enum PropertySortBy {
@@ -449,10 +463,13 @@ Entidad `Property` tal como se devuelve **en las lecturas públicas** (`GET /pro
   boleto: boolean;
   garage: boolean;
   patio: boolean;
+  aptoMascotas: boolean;         // NOT NULL, default false
   supTotal: number | null;
   supCubierta: number | null;
   antiquity: number;
   price: number;
+  expensas: number | null;       // mensuales, SIEMPRE EN PESOS (no sigue a `currency`)
+  currency: Currency;            // 'ARS' | 'USD' — NOT NULL, default 'USD'
   status: StatusProperty;
   operationType: OperationType;
   created_at: string; updated_at: string;
@@ -472,6 +489,12 @@ Entidad `Property` tal como se devuelve **en las lecturas públicas** (`GET /pro
 ```
 
 Los tres campos de documentación legal (`property_deed`, `tractoAbreviado`, `boleto`) son **independientes** — cualquier combinación es válida.
+
+**`currency`, `expensas` y `aptoMascotas` viajan en las TRES lecturas públicas** (`GET /properties`, `/properties/filter`, `/properties/:id`) sin que haya que pedirlos: las queries seleccionan la entidad `Property` completa, sin lista de columnas.
+
+- **`currency`** es `NOT NULL` con default `'USD'`, así que **nunca llega `null` ni `undefined`** — ni siquiera en las propiedades creadas antes de que la columna existiera (el `ALTER TABLE ... DEFAULT 'USD'` las dejó pobladas).
+- **`expensas`** es `number | null`. ⚠️ **Siempre en pesos, sin importar `currency`** — en el mercado local el inmueble se publica en dólares y las expensas se cobran en pesos, así que NO tiene moneda propia. `null` significa "no informadas" y es distinto de `0` ("no tiene expensas"): el frontend no debe renderizar la fila cuando es `null`, en vez de mostrar "Expensas: —".
+- **`aptoMascotas`** es `NOT NULL` con default `false`. Todo el catálogo previo a la columna quedó en `false` — es el valor honesto, nadie declaró lo contrario, pero **no equivale a "no acepta mascotas" verificado**.
 
 ⚠️ **`comments` en `GET /properties/:id` incluye los comentarios ocultos** (`isHidden: true`) sin distinguir por rol del que consulta — a diferencia de `GET /properties/:propertyId/comments` (§10), que sí los filtra. Si se necesita la lista pública correcta de comentarios, usar ese endpoint dedicado, no el array embebido en la propiedad.
 
@@ -507,7 +530,7 @@ Query params (`PropertyFilterDto`, todos opcionales):
 | Paginación | `page` (int ≥1, default 1), `limit` (int 1–100, default 10) |
 | Texto | `zone`, `provincia`, `localidad`, `barrio`, `direccion`, `search` |
 | Numéricos exactos | `rooms`, `bathrooms`, `typeOfPropertyId` |
-| Rangos | `minPrice`, `maxPrice`, `minSupTotal`, `maxSupTotal`, `minSupCubierta`, `maxSupCubierta`, `maxAntiquity` |
+| Rangos | `minPrice`, `maxPrice`, `minSupTotal`, `maxSupTotal`, `minSupCubierta`, `maxSupCubierta`, `minExpensas`, `maxExpensas`, `maxAntiquity` |
 | Booleanos (**string** `"true"`/`"false"`) | `garage`, `patio`, `property_deed`, `tractoAbreviado`, `boleto` |
 | Otros | `status` (enum), `operationType` (enum) |
 
@@ -531,6 +554,7 @@ Response **200**:
 
 Comportamientos que hay que conocer:
 
+- ⚠️ **`minExpensas` y `maxExpensas` tratan los `NULL` distinto, a propósito.** `minExpensas` **excluye** las propiedades sin expensas cargadas (`NULL >= x` es falso: no cumplen "al menos X"). `maxExpensas` las **incluye** (`p.expensas IS NULL OR p.expensas <= :max`): quien pone un tope está limitando su gasto mensual, y una propiedad sin expensas es el mejor caso posible para ese criterio — esconderla sería lo contrario de lo que pidió.
 - **`status` por defecto es `disponible`.** Si no se manda `status`, la query fuerza `p.status = 'disponible'` — no se ven pausadas ni vendidas.
 - **Orden default:** `created_at DESC`. `order` distinto de `'ASC'` se trata como `DESC`.
 - **`sortBy=rating`** ordena por una subconsulta `COALESCE(AVG(score),0)` con alias `avgscore` — coincide con el `ratingAverage` que ahora viaja en la respuesta.
@@ -565,7 +589,7 @@ Error: **404** `"No existe la propiedad con ID {id}"`.
 - **`images`** → hasta **10** archivos (`image/*`, ≤5 MB c/u)
 
 ```ts
-// CreatePropertyDto — TODOS obligatorios
+// CreatePropertyDto — todos obligatorios SALVO los marcados como opcionales
 {
   title: string; description: string;
   typeOfPropertyId: number;
@@ -574,8 +598,11 @@ Error: **404** `"No existe la propiedad con ID {id}"`.
   provincia: string; localidad: string; barrio: string; direccion: string; zone: string;
   rooms: number; bathrooms: number;
   garage: boolean; patio: boolean;
+  aptoMascotas?: boolean;       // OPCIONAL — sin valor queda en `false`
   supTotal: number; supCubierta: number;
   antiquity: number; price: number;
+  expensas?: number;            // OPCIONAL, entero ≥ 0, EN PESOS — sin valor queda `null`
+  currency?: Currency;          // OPCIONAL — si no viene, el DTO la deja en 'USD'
   status: StatusProperty;
 }
 ```
@@ -599,6 +626,10 @@ Errores: **404** `"No existe el tipo de propiedad con ID {n}"` · **502** `"No s
 
 `multipart/form-data`:
 - **`data`** → JSON con `UpdatePropertyDto` (todos los campos opcionales, los mismos de create, más `deleteImages?: number[]` y `setCoverImageId?: number`)
+
+⚠️ **`currency` en el PATCH no tiene default**, a diferencia de create: si no viene en el body, la moneda guardada **queda como está**. Un default `'USD'` acá pasaría a dólares toda propiedad editada desde un formulario que no mande el campo.
+
+⚠️ **Para BORRAR unas expensas ya cargadas hay que mandar `expensas: null`**, no omitir el campo (omitirlo las deja como estaban). `@IsOptional()` de class-validator saltea la validación tanto con `undefined` como con `null`, así que el `null` pasa y llega a la columna. Es la única forma de desasignarlas.
 - **`newImages`** → hasta 10 archivos
 
 Orden de operaciones (importa porque los borrados en Cloudinary son irreversibles): 1) sube las nuevas → 2) guarda la propiedad → 3) recién ahí borra las de `deleteImages` → 4) aplica `setCoverImageId` → 5) garantiza que exista una portada.
@@ -622,6 +653,7 @@ Guards a nivel de clase: `JwtAuthGuard` + `RolesGuard`.
 | Método | Ruta | Auth |
 |---|---|---|
 | GET | `/property-images/:id` | JWT (cualquier rol) |
+| PATCH | `/property-images/:propertyId/reorder` | JWT + **ADMIN** |
 | PATCH | `/property-images/:id/set-cover` | JWT + **ADMIN** |
 | DELETE | `/property-images/:id` | JWT + **ADMIN** |
 
@@ -631,14 +663,48 @@ interface PropertyImages {
   url: string;
   hash: string | null;      // UNIQUE — evita subir dos veces la misma imagen
   isCover: boolean;
+  order: number;            // posición en la galería (0 = primera). NOT NULL, default 0
   publicId: string;         // public_id de Cloudinary
   property?: Property;      // ⚠️ SÍ aparece (el @Exclude() no tiene efecto, ver §0)
 }
 ```
 
+⚠️ **INVARIANTE: `order === 0` ⇔ `isCover === true`.** No son dos controles independientes: la primera imagen de la galería ES la portada. Los tres caminos que asignan orden (`reorder`, `set-cover`, y el backfill de la migración) la mantienen. **No hay endpoint que permita romperla**, así que el frontend puede confiar en `images[0]` tanto como en `.find(i => i.isCover)`.
+
+Las imágenes vienen **ordenadas por `order ASC, id ASC`** en las tres lecturas de propiedades (§5): en `GET /properties/:id` con un `ORDER BY` real en la query, y en `GET /properties` y `/properties/filter` ordenadas en memoria después de traer la página (la paginación `DISTINCT` de TypeORM no admite ordenar por una columna de la relación joineada).
+
 - **GET** → `PropertyImages` con la relación `property` cargada **entera** (esta ruta no pasa por el filtro de campos públicos de §5, porque no usa `PropertiesService`). Error **404** `"Imagen no encontrada"`.
-- **PATCH .../set-cover** → `{ message: "Imagen establecida como portada correctamente.", image: PropertyImages }`. Pone en `false` la portada de todas las demás imágenes de esa propiedad. Errores: **404** `"Imagen no encontrada"` / `"La imagen no tiene una propiedad asociada"`.
-- **DELETE** → `{ message: "Imagen eliminada correctamente." }`. Borra de Cloudinary y de la DB; si era portada, promueve la siguiente por `id`.
+- **PATCH .../set-cover** → `{ message: "Imagen establecida como portada correctamente.", image: PropertyImages }`. ⚠️ **Cambio de comportamiento:** además de marcar `isCover`, ahora **mueve la imagen a `order = 0`** y corre una posición al resto (conservando su orden relativo). Antes solo tocaba el flag, lo que con la columna `order` dejaría la portada en el medio de la galería. Errores: **404** `"Imagen no encontrada"` / `"La imagen no tiene una propiedad asociada"`.
+- **DELETE** → `{ message: "Imagen eliminada correctamente." }`. Borra de Cloudinary y de la DB; si era portada, promueve la primera por `order ASC, id ASC` (antes era por `id ASC`). ⚠️ **El borrado NO renumera**: quedan huecos en la secuencia (`0, 1, 3`). Es intencional — el orden relativo es lo que importa, y renumerar obligaría a un UPDATE de toda la galería en cada borrado. Las imágenes nuevas se encolan después del `MAX(order)`, no del `COUNT`.
+
+### PATCH /property-images/:propertyId/reorder (ADMIN)
+
+⚠️ **El parámetro de esta ruta es el id de la PROPIEDAD**, no el de una imagen — es la única del controller donde `:param` no es una imagen.
+
+Body:
+
+```ts
+{ imageIds: number[] }   // los ids EN EL ORDEN DESEADO; el índice es el `order`
+```
+
+Asigna `order = índice` a cada imagen y marca la de índice 0 como portada. Todo dentro de una transacción: o se aplica el orden completo o no se aplica nada (un fallo a mitad dejaría órdenes duplicados y dos portadas, o ninguna).
+
+**El array tiene que traer TODAS las imágenes de la propiedad**, exactamente una vez cada una. No se acepta un subconjunto: obligaría a inventar una regla implícita para las que faltan, y sin el chequeo de pertenencia mandar el id de una imagen de otra propiedad la reordenaría desde esta URL (IDOR).
+
+Response **200**:
+
+```ts
+{
+  message: "Orden de las imágenes actualizado correctamente.",
+  images: { id: number; order: number; isCover: boolean; url: string }[]
+}
+```
+
+Errores:
+- **404** `"No existe la propiedad con ID {n}"` · `"La propiedad no tiene imágenes para reordenar"`
+- **400** `"El orden tiene imágenes repetidas"`
+- **400** `"El orden tiene que incluir exactamente las {n} imágenes de la propiedad"` (faltan, sobran, o alguna no es de esta propiedad)
+- **400** §1.b si `imageIds` no es un array de enteros no vacío
 
 ---
 
@@ -1334,6 +1400,12 @@ export enum OperationType {
   ALQUILER_TEMPORAL = 'temporal',
 }
 
+/** Moneda de `Property.price`. NO aplica a `expensas` (siempre ARS). */
+export enum Currency {
+  ARS = 'ARS',
+  USD = 'USD',
+}
+
 export enum PropertySortBy {
   PRICE = 'price', ANTIQUITY = 'antiquity', DATE = 'date', RATING = 'rating',
 }
@@ -1430,8 +1502,14 @@ export interface PropertyImage {
   url: string;
   hash: string | null;
   isCover: boolean;
+  order: number;         // 0 = primera. INVARIANTE: order === 0 ⇔ isCover
   publicId: string;
   property?: Property;   // aparece en /property-images/*, ver §0
+}
+
+export interface ReorderImagesDto {
+  /** Ids en el orden deseado. TODAS las imágenes de la propiedad, sin repetir. */
+  imageIds: number[];
 }
 
 export interface Property {
@@ -1450,10 +1528,14 @@ export interface Property {
   boleto: boolean;
   garage: boolean;
   patio: boolean;
+  aptoMascotas: boolean;             // NOT NULL, default false
   supTotal: number | null;
   supCubierta: number | null;
   antiquity: number;
   price: number;
+  /** Expensas mensuales EN PESOS (no siguen a `currency`). null = no informadas. */
+  expensas: number | null;
+  currency: Currency;                // NOT NULL, default 'USD' — nunca llega null
   status: StatusProperty;
   operationType: OperationType;
   created_at: string;
@@ -1647,6 +1729,8 @@ export interface PropertyFilterDto {
   minPrice?: number; maxPrice?: number;
   minSupTotal?: number; maxSupTotal?: number;
   minSupCubierta?: number; maxSupCubierta?: number;
+  /** ⚠️ `maxExpensas` INCLUYE las propiedades sin expensas; `minExpensas` las excluye. */
+  minExpensas?: number; maxExpensas?: number;
   maxAntiquity?: number;
   /** ⚠️ strings, no booleanos: son query params. */
   garage?: 'true' | 'false';
@@ -1666,14 +1750,19 @@ export interface CreatePropertyDto {
   provincia: string; localidad: string; barrio: string; direccion: string; zone: string;
   rooms: number; bathrooms: number;
   garage: boolean; patio: boolean;
+  aptoMascotas?: boolean;       // opcional — sin valor queda en false
   supTotal: number; supCubierta: number;
   antiquity: number; price: number;
+  expensas?: number;            // opcional, entero ≥ 0, EN PESOS
+  currency?: Currency;          // opcional — el DTO la deja en 'USD' si falta
   status: StatusProperty;
 }
 
 export type UpdatePropertyDto = Partial<CreatePropertyDto> & {
   deleteImages?: number[];
   setCoverImageId?: number;
+  /** `null` BORRA las expensas guardadas; omitir el campo las deja como estaban. */
+  expensas?: number | null;
 };
 
 export interface CreateSearchPreferenceDto {
@@ -1841,6 +1930,9 @@ src/migrations/
   1785731953058-AddNotificationType.ts               ← Notification.type + backfill de filas existentes
   1785732291219-AddForeignKeyIndexes.ts              ← índices de rendimiento (no cambia ningún contrato)
   1785732860217-UniqueSearchPreferencePerUser.ts     ← constraint única + salvaguarda de auditoría
+  1786190400000-AddPropertyCurrency.ts               ← Property.currency (enum ARS|USD, default USD). Sin backfill.
+  1786190500000-AddPropertyImageOrder.ts             ← PropertyImages.order + BACKFILL (numera cada galería 0..n-1)
+  1786190600000-AddPropertyExpensasAndPets.ts        ← Property.expensas (int null) y Property.aptoMascotas (bool false). Sin backfill.
 
 src/migrations/_archivo_pre_baseline/    ← NO se ejecutan (fuera del glob de TypeORM). Solo referencia histórica.
   1785186415891-AddPropertySurfaceAndLegalFields.ts
@@ -1850,5 +1942,7 @@ src/migrations/_archivo_pre_baseline/    ← NO se ejecutan (fuera del glob de T
 ```
 
 Verificado (2026-08-03) contra una base Postgres vacía real: `migration:run` termina sin error y el schema resultante coincide exactamente con el que generaba `synchronize` en desarrollo — mismas columnas, mismos índices.
+
+⚠️ **Las tres migraciones del 2026-08-08 (`AddPropertyCurrency`, `AddPropertyImageOrder`, `AddPropertyExpensasAndPets`) todavía NO se corrieron contra una base real.** Fueron escritas a mano (no generadas por el CLI) y compilan, pero la verificación de arriba no las cubre. Antes de producción hay que correr `npm run migration:run` sobre una copia de la base y revisar especialmente el backfill de `AddPropertyImageOrder`, que es la única de las tres que **modifica datos existentes**.
 
 `UniqueSearchPreferencePerUser` hace un `DELETE` de filas duplicadas antes de crear el índice único; antes de borrar, loguea por consola qué va a borrar y copia esas filas a `_migration_backup_search_preferences_dupes` (tabla que la migración nunca borra) para poder auditar en producción.

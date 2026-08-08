@@ -9,7 +9,7 @@ import {
   IsArray 
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { OperationType, StatusProperty } from './enumsStatusProperty';
+import { Currency, OperationType, StatusProperty } from './enumsStatusProperty';
 
 export class UpdatePropertyDto {
   @IsOptional()
@@ -83,6 +83,25 @@ export class UpdatePropertyDto {
   patio?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  aptoMascotas?: boolean;
+
+  /**
+   * Expensas mensuales EN PESOS.
+   *
+   * `@IsOptional()` de class-validator saltea la validación tanto con
+   * `undefined` como con `null`, así que mandar `expensas: null` es la forma de
+   * BORRAR unas expensas ya cargadas: pasa la validación y llega al
+   * `Object.assign` del service como null. Sin eso no habría manera de
+   * desasignarlas una vez puestas.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  expensas?: number | null;
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
@@ -93,6 +112,13 @@ export class UpdatePropertyDto {
   @IsNumber()
   @Min(0)
   price?: number;
+
+  // Sin default acá, a diferencia de create: en un PATCH, "no vino" significa
+  // "no lo toques". Un default USD dejaría en dólares toda propiedad editada
+  // desde un formulario que no mande el campo.
+  @IsOptional()
+  @IsEnum(Currency)
+  currency?: Currency;
 
   @IsOptional()
   @Type(() => Number)
