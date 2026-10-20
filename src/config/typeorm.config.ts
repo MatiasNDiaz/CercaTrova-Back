@@ -18,6 +18,7 @@ import { FailedEmail } from '../modules/notifications/email/entities/failed-emai
 import { Post } from '../modules/posts/entities/post.entity';
 import { PostLike } from '../modules/posts/entities/post-like.entity';
 import { PostComment } from '../modules/posts/entities/post-comment.entity';
+import { PostMedia } from '../modules/posts/entities/post-media.entity';
 import { PageVisit } from '../modules/tracking/entities/page-visit.entity';
 import { PropertyView } from '../modules/tracking/entities/property-view.entity';
 import { FilterUsage } from '../modules/tracking/entities/filter-usage.entity';
@@ -32,7 +33,7 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
-    entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat, FailedEmail, Post, PostLike, PostComment, PageVisit, PropertyView, FilterUsage],
+    entities: [User, Property, PropertyRequest, UserSearchFeedback, Rating, Comment, SearchPreference, Notification, Favorite, PropertyType, PropertyImages, Stat, FailedEmail, Post, PostLike, PostComment, PostMedia, PageVisit, PropertyView, FilterUsage],
     // Migraciones (se corren con `npm run migration:run`, nunca automáticamente).
     // El glob cubre tanto el código fuente (.ts en dev) como el build (.js en prod).
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],

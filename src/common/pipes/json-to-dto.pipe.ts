@@ -1,7 +1,20 @@
 // src/common/pipes/json-to-dto.pipe.ts
 import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
+import { validate, ValidationError } from 'class-validator';
+
+/**
+ * Mensajes de un árbol de errores de class-validator, incluidos los de
+ * objetos ANIDADOS (`@ValidateNested`). Antes solo se leía el primer nivel:
+ * un error dentro de un array de objetos (ej. la galería `media` de una
+ * publicación) llegaba al cliente como `message: []`, un 400 sin explicación.
+ */
+function collectMessages(errors: ValidationError[]): string[] {
+  return errors.flatMap((e) => [
+    ...Object.values(e.constraints ?? {}),
+    ...collectMessages(e.children ?? []),
+  ]);
+}
 
 // 🔒 SEGURIDAD (M4): pipe para endpoints multipart que reciben el DTO como
 // string JSON dentro de un campo del form-data (ej: @Body('data')).
@@ -33,7 +46,7 @@ export class JsonToDtoPipe<T extends object> implements PipeTransform<string, Pr
       forbidNonWhitelisted: true,
     });
     if (errors.length > 0) {
-      const messages = errors.flatMap((e) => Object.values(e.constraints ?? {}));
+      const messages = collectMessages(errors);
       throw new BadRequestException(messages);
     }
 

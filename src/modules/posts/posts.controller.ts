@@ -1,11 +1,12 @@
 import {
   Controller, Get, Post as HttpPost, Patch, Delete,
-  Param, Body, Query, UseGuards, UseInterceptors, UploadedFile, ParseIntPipe,
+  Param, Body, Query, UseGuards, UseInterceptors, UploadedFiles, ParseIntPipe,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { PostsService } from './posts.service';
-import { CreatePostDto } from './dto/create-post.dto';
+import { CreatePostDto, UpdatePostDto } from './dto/create-post.dto';
+import { POST_MEDIA_LIMITS } from './post-media.constants';
 import {
   CreatePostCommentDto, ReplyPostCommentDto, FindPostsDto,
 } from './dto/post-comment.dto';
@@ -20,6 +21,26 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 
 type MulterFile = Express.Multer.File;
+
+/**
+ * Campos de archivo aceptados. `images` es el nuevo (varias imágenes); `image`
+ * (una sola) se sigue aceptando para no romper a un cliente con el formulario
+ * anterior. Los dos pasan por `imageUploadOptions` (solo image/*, ≤5 MB).
+ * Los VIDEOS no viajan acá: se suben directo a Cloudinary (ver
+ * `getVideoUploadSignature`).
+ */
+const POST_IMAGE_FIELDS = [
+  { name: 'image', maxCount: 1 },
+  { name: 'images', maxCount: POST_MEDIA_LIMITS.maxMediaPerPost },
+];
+
+type PostImageFiles = { image?: MulterFile[]; images?: MulterFile[] };
+
+/** Une los dos campos en una sola lista, en el orden en que llegaron. */
+const imageList = (files?: PostImageFiles): MulterFile[] => [
+  ...(files?.image ?? []),
+  ...(files?.images ?? []),
+];
 
 /**
  * Publicaciones (feed estilo red social).
@@ -47,6 +68,18 @@ export class PostsController {
     return this.postsService.findAll(query.sortBy, viewerId);
   }
 
+  /**
+   * Última publicación con video (para "Cerca-Reels" de la landing).
+   * ⚠️ Va ANTES de `GET :id`: Nest registra las rutas en orden y `:id`
+   * atraparía "latest-video" (y respondería 400 por el `ParseIntPipe`).
+   */
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('latest-video')
+  findLatestWithVideo() {
+    return this.postsService.findLatestWithVideo();
+  }
+
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
@@ -54,7 +87,16 @@ export class PostsController {
     return this.postsService.findOne(id, viewerId);
   }
 
-  // ── CREAR / BORRAR (ADMIN) ─────────────────────────────────────
+  // ── SUBIDA DE VIDEOS (ADMIN) ───────────────────────────────────
+  // Firma para que el navegador suba un video directo a Cloudinary. Solo
+  // admin: con una firma válida cualquiera podría subir a la cuenta.
+  @Roles(Role.ADMIN)
+  @HttpPost('media/video-signature')
+  getVideoUploadSignature() {
+    return this.postsService.getVideoUploadSignature();
+  }
+
+  // ── CREAR / EDITAR / BORRAR (ADMIN) ────────────────────────────
   // El DTO llega como JSON string en el campo `data` y se valida con
   // `JsonToDtoPipe`. Se tipa como `string` A PROPÓSITO: el ValidationPipe
   // global corre antes que los pipes de parámetro y, con el metatype real,
@@ -62,14 +104,26 @@ export class PostsController {
   // documentado en `properties.controller.ts`).
   @Roles(Role.ADMIN)
   @HttpPost()
-  @UseInterceptors(FileInterceptor('image', imageUploadOptions))
+  @UseInterceptors(FileFieldsInterceptor(POST_IMAGE_FIELDS, imageUploadOptions))
   create(
     @Body('data', new JsonToDtoPipe(CreatePostDto)) rawDto: string,
-    @UploadedFile() image: MulterFile,
+    @UploadedFiles() files: PostImageFiles,
     @GetUser('id') agentId: number,
   ) {
     const dto = rawDto as unknown as CreatePostDto;
-    return this.postsService.create(dto, image, agentId);
+    return this.postsService.create(dto, imageList(files), agentId);
+  }
+
+  @Roles(Role.ADMIN)
+  @Patch(':id')
+  @UseInterceptors(FileFieldsInterceptor(POST_IMAGE_FIELDS, imageUploadOptions))
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('data', new JsonToDtoPipe(UpdatePostDto)) rawDto: string,
+    @UploadedFiles() files: PostImageFiles,
+  ) {
+    const dto = rawDto as unknown as UpdatePostDto;
+    return this.postsService.update(id, dto, imageList(files));
   }
 
   @Roles(Role.ADMIN)

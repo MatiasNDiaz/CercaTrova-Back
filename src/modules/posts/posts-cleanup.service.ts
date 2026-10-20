@@ -36,5 +36,20 @@ export class PostsCleanupService {
         error instanceof Error ? error.stack : String(error),
       );
     }
+
+    // Barrido de videos subidos que nunca llegaron a una publicación. Va en su
+    // propio try: si la Admin API de Cloudinary falla, no tiene por qué
+    // arrastrar la limpieza de publicaciones de arriba (ni viceversa).
+    try {
+      const { deleted } = await this.postsService.sweepOrphanVideos();
+      if (deleted > 0) {
+        this.logger.log(`Limpieza de videos huérfanos: ${deleted} eliminado(s).`);
+      }
+    } catch (error) {
+      this.logger.error(
+        'Falló el barrido de videos huérfanos',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 }

@@ -98,6 +98,65 @@ export class TrackingService {
   }
 
   /**
+   * Personas distintas que abrieron la ficha de cada propiedad en los últimos
+   * `WEEKLY_VISITORS_WINDOW_DAYS` días. Alimenta la etiqueta pública
+   * "VISTA POR X PERSONAS" del catálogo, así que tiene que ser un dato REAL y
+   * conservador. Reglas de conteo:
+   *
+   *  - Fuente: `page_visits`, NO `property_views`. ⚠️ `property_views` se
+   *    registra en `GET /properties/:id`, y esa request la hace el SERVIDOR de
+   *    Next (SSR en Vercel) sin la cookie del navegador: cada vista recibe un
+   *    `visitorId` nuevo, así que ahí "únicos" = "vistas totales" (recargas,
+   *    bots y previews de WhatsApp incluidos). `page_visits` la registra el
+   *    propio navegador (`VisitTracker`), con la cookie anónima estable.
+   *  - Una persona = un `visitorId` (cookie `ct_vid`, dura 1 año). La misma
+   *    persona recargando 20 veces en la semana cuenta UNA vez:
+   *    `COUNT(DISTINCT visitorId)` sobre toda la ventana.
+   *  - Sin el equipo: se excluyen las visitas con `isAdmin = true`.
+   *  - Sin el id comodín 'desconocido' (request que llegó sin cookie).
+   *  - Solo la ficha exacta `/properties/<id>`: el listado no cuenta.
+   *
+   * Límite honesto: dos navegadores de la misma persona cuentan como dos, y un
+   * bot que ejecute JS sin guardar cookies podría sumar. El error va siempre en
+   * el mismo sentido acotado; no hay ningún número inventado.
+   */
+  static readonly WEEKLY_VISITORS_WINDOW_DAYS = 7;
+
+  async weeklyPropertyVisitors(): Promise<{
+    windowDays: number;
+    items: { propertyId: number; visitors: number }[];
+  }> {
+    const windowDays = TrackingService.WEEKLY_VISITORS_WINDOW_DAYS;
+    try {
+      const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+      const idExpr = `CAST(SUBSTRING("v"."path" FROM '^/properties/([0-9]+)$') AS integer)`;
+
+      const rows = await this.visitRepo
+        .createQueryBuilder('v')
+        .select(idExpr, 'propertyId')
+        .addSelect('COUNT(DISTINCT "v"."visitorId")', 'visitors')
+        .where('"v"."createdAt" > :since', { since })
+        .andWhere('"v"."isAdmin" = false')
+        .andWhere(`"v"."visitorId" <> 'desconocido'`)
+        .andWhere(`"v"."path" ~ '^/properties/[0-9]+$'`)
+        .groupBy(idExpr)
+        .orderBy('"visitors"', 'DESC')
+        .limit(200)
+        .getRawMany<{ propertyId: number; visitors: string }>();
+
+      return {
+        windowDays,
+        items: rows.map((r) => ({ propertyId: Number(r.propertyId), visitors: Number(r.visitors) })),
+      };
+    } catch (error) {
+      // Regla del servicio: una métrica nunca rompe la página que la pide. Sin
+      // datos, la etiqueta simplemente no aparece.
+      this.logger.error('No se pudieron calcular los visitantes semanales', error as Error);
+      return { windowDays, items: [] };
+    }
+  }
+
+  /**
    * Registra los criterios de una búsqueda del catálogo.
    *
    * Se ignoran `page`, `limit`, `sortBy`, `order` y `status`: son controles de

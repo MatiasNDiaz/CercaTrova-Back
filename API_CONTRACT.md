@@ -1122,14 +1122,35 @@ type PostAuthor = { id: number; name: string; surname: string|null; photo: strin
 interface Post {
   id: number;
   description: string;
-  imageUrl: string;
-  imagePublicId: string;
+  imageUrl: string;           // PORTADA: URL del primer medio (fotograma inicial si es video)
+  imagePublicId: string | null; // ⚠️ LEGADO (pre `post_media`); null en publicaciones nuevas
+  media: PostMedia[];         // imágenes y videos, ordenados por `order` (migración AddPostMedia)
   likesCount: number;         // contador desnormalizado, para ordenar sin subquery
   createdAt: string;
   agent: PostAuthor;
-  commentsCount?: number;     // solo en GET /posts — cuenta SOLO los visibles
+  commentsCount?: number;     // en GET /posts y GET /posts/latest-video — cuenta SOLO los visibles
   likedByMe: boolean;         // siempre presente en GET /posts y GET /posts/:id
 }
+
+interface PostMedia {
+  id: number;
+  postId: number;
+  type: 'image' | 'video';
+  url: string;                // Cloudinary, archivo original
+  publicId: string;           // UNIQUE: un archivo no puede colgar de dos publicaciones
+  order: number;              // 0 = primero (portada)
+  posterUrl: string | null;   // solo video: fotograma inicial JPG
+  width: number | null;       // null en imágenes anteriores a post_media
+  height: number | null;
+  duration: number | null;    // solo video, segundos
+  createdAt: string;
+}
+
+/** Un lugar de la galería en crear/editar. La lista completa = galería final, en orden. */
+type PostMediaSlot =
+  | { kind: 'existing'; id: number }      // solo al editar: medio de ESTA publicación
+  | { kind: 'image'; index: number }      // índice dentro de los archivos `images` adjuntos
+  | { kind: 'video'; publicId: string };  // video ya subido a Cloudinary con la firma de abajo
 
 interface PostComment {
   id: number;
@@ -1151,14 +1172,37 @@ Response **200**: `Post[]` con `commentsCount` y `likedByMe`. Para un visitante 
 ### GET /posts/:id
 Response **200**: `Post & { likedByMe: boolean }` (sin `commentsCount`). Error **404** `"No existe la publicación con ID {id}"`.
 
+### GET /posts/latest-video
+Público. La publicación más reciente que tenga al menos un video (sección "Cerca-Reels" de la landing).
+Response **200**: `{ post: Post | null }` — `post` incluye `commentsCount`. `null` si no hay ningún video vigente (las publicaciones duran 7 días).
+
+### Límites de medios (fuente única: `post-media.constants.ts`)
+Imágenes ≤5 MB (`image/*`) · videos ≤100 MB, **MP4 o WebM** · hasta **10 medios** por publicación, de los cuales hasta **3 videos**.
+
+### POST /posts/media/video-signature (ADMIN)
+Firma para que el navegador suba **un** video directo a Cloudinary (los videos NO pasan por el backend: proxy de Vercel, timeout de axios y memoria de multer no los soportarían).
+Response **201**: `{ cloudName, apiKey, uploadUrl, timestamp, folder: "posts/videos", allowedFormats: "mp4,webm", signature, limits }`. **Nunca** incluye el `api_secret`. La firma fija carpeta y formatos, y Cloudinary la rechaza pasada 1 hora.
+El navegador hace `POST {uploadUrl}` multipart con `file, api_key, timestamp, signature, folder, allowed_formats` y usa el `public_id` de la respuesta en un slot `{ kind: 'video', publicId }`.
+Errores: **401/403** sin sesión o sin rol admin · **502** si Cloudinary no está configurado.
+
 ### POST /posts (ADMIN)
-`multipart/form-data`: **`data`** = JSON `{ description: string }` (`@IsNotEmpty @MaxLength(1000)`), **`image`** = un archivo (`image/*`, ≤5 MB).
+`multipart/form-data`: **`data`** = JSON `{ description: string; media?: PostMediaSlot[] }` (`description` `@IsNotEmpty @MaxLength(1000)`), **`images`** = hasta 10 archivos (`image/*`, ≤5 MB c/u).
+**Compatibilidad:** el formulario anterior (`data = { description }` + un archivo en **`image`**) sigue funcionando; sin `media`, la galería son las imágenes adjuntas en orden.
 Response **201**: el `Post` creado (vía `findOne`).
-Errores: **400** `"La publicación necesita una imagen"` · **502** `"No pudimos procesar la imagen. Intentá de nuevo."` (si falla el guardado después de subir, la imagen se borra en rollback) · §1.b / §1.c / §1.e.
+Validaciones (todas **400**, antes de subir nada): galería vacía o con más de 10 medios / 3 videos · `index` sin archivo adjunto · archivo adjunto sin usar en la galería · repetidos · `publicId` con caracteres no permitidos · video inexistente en Cloudinary, fuera de `posts/videos`, de otro formato o >100 MB (si es nuestro y se pasa de peso, se borra) · video ya usado por otra publicación.
+Otros errores: **413** imagen >5 MB · **502** si Cloudinary falla al subir o verificar.
+**Consistencia:** las imágenes se suben primero; publicación + medios se guardan en UNA transacción; si la base falla, las imágenes subidas se borran. Los videos no se borran en ese caso (los subió el admin y puede reintentar); si nunca se usan, el barrido diario de huérfanos los elimina (solo en producción, >24 h).
 **Efecto lateral:** notifica a todos los usuarios (`type: nueva_publicacion`, in-app + email, respetando `notifyBroadcast`).
 
+### PATCH /posts/:id (ADMIN)
+Mismo multipart que crear: **`data`** = JSON `{ description?: string; media: PostMediaSlot[] }` + archivos nuevos en **`images`**.
+`media` es **obligatorio** y es la galería FINAL: un medio existente que no figure se elimina; los que figuran se reordenan. No reinicia el plazo de 7 días.
+Response **200**: el `Post` actualizado. Errores: los de crear + **404** `"No existe la publicación con ID {id}"` · **400** si un slot `existing` no es de esta publicación.
+**Consistencia:** los archivos de los medios quitados se borran de Cloudinary recién después de confirmar la transacción.
+
 ### DELETE /posts/:id (ADMIN)
-Response **200**: `{ "message": "Publicación {id} eliminada correctamente" }`. Error **404** `"La publicación no existe"`.
+Response **200**: `{ "message": "Publicación {id} eliminada correctamente" }`. Error **404** `"La publicación con ID {id} no existe"`.
+Borra de Cloudinary todos sus medios (los videos con `resource_type: video`) y la imagen legada si no estaba entre ellos.
 
 ### POST /posts/:id/like
 **Toggle** — la misma llamada da y quita el like. Transaccional; el contador se actualiza en SQL (`likesCount + 1` / `GREATEST(likesCount - 1, 0)`) para ser seguro bajo concurrencia.
@@ -1202,6 +1246,12 @@ Dos endpoints públicos que el frontend llama por su cuenta, más dos registros 
 |---|---|---|---|
 | POST | `/tracking/visit` | Público (+ `OptionalJwtAuthGuard`) | 120/min |
 | POST | `/tracking/duration` | Público (+ `OptionalJwtAuthGuard`) | 120/min |
+| GET | `/tracking/properties/weekly-visitors` | Público | global |
+
+### GET /tracking/properties/weekly-visitors
+Personas distintas que abrieron la ficha de cada propiedad en los últimos 7 días. Alimenta la etiqueta pública "VISTA POR X PERSONAS" del catálogo.
+Response **200**: `{ windowDays: 7, items: { propertyId: number; visitors: number }[] }` (orden por `visitors DESC`, máx. 200). Nunca lanza: ante un error devuelve `items: []`.
+**Reglas de conteo:** fuente `page_visits` (la registra el navegador con la cookie `ct_vid`), **no** `property_views` (esa la registra el SSR de Next sin cookie, así que ahí cada vista es un visitante nuevo) · una persona = un `visitorId`, contado una vez en toda la ventana · excluye `isAdmin = true` y `visitorId = 'desconocido'` · solo la ruta exacta `/properties/<id>`.
 
 ### POST /tracking/visit
 Body: `{ path: string }` (`@IsNotEmpty @MaxLength(300)`, ej. `"/properties/4"`).

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { TrackingService } from './tracking.service';
@@ -42,6 +42,17 @@ export class TrackingController {
       userId,
       role,
     });
+  }
+
+  /**
+   * Personas distintas por propiedad en los últimos 7 días — para la etiqueta
+   * "VISTA POR X PERSONAS" del catálogo. Público: es un agregado anónimo que
+   * igual se muestra en la tarjeta. Ver las reglas de conteo en el service.
+   */
+  @Public()
+  @Get('properties/weekly-visitors')
+  weeklyPropertyVisitors() {
+    return this.trackingService.weeklyPropertyVisitors();
   }
 
   /**
