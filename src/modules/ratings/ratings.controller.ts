@@ -1,29 +1,32 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, ParseIntPipe } from '@nestjs/common';
 import { RatingsService } from './ratings.service';
 import { CreateRatingDto } from './dto/create-rating.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/common/guards/roles.guard';
-import { Roles } from 'src/common/decorators/roles.decorator';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 import { GetUser } from 'src/common/decorators/get-user.decorator';
-import { Role } from '../users/enums/role.enum';
+import { Actor, InteractionActor } from 'src/common/interaction/interaction-actor';
+import { ReactionRateLimitGuard } from 'src/common/interaction/interaction-rate-limit.guard';
 
 @Controller('ratings')
 export class RatingsController {
   constructor(private readonly ratingsService: RatingsService) {}
 
-  // 🔒 Sin RolesGuard el @Roles(Role.USER) era decorativo y un ADMIN podía
-  // valorar propiedades (verificado en la auditoría). Valorar es una acción de
-  // usuario: el admin es quien publica, no quien puntúa.
-  // El id sale del token vía @GetUser, no de @Req() — convención del repo.
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.USER)
+  /**
+   * Calificar con estrellas — usuario logueado o visitante sin sesión.
+   *
+   * `OptionalJwtAuthGuard`: con sesión válida la calificación queda en su
+   * cuenta; sin sesión (o token vencido) se guarda como visitante, identificado
+   * por la cookie anónima `ct_vid`. El admin sigue sin poder calificar (lo
+   * rechaza el service con 403).
+   */
+  @UseGuards(OptionalJwtAuthGuard, ReactionRateLimitGuard)
   @Post(':propertyId')
   async rate(
     @Param('propertyId', ParseIntPipe) propertyId: number,
     @Body() dto: CreateRatingDto,
-    @GetUser('id') userId: number,
+    @Actor() actor: InteractionActor,
   ) {
-    return this.ratingsService.rateProperty(userId, propertyId, dto.score);
+    return this.ratingsService.rateProperty(actor, propertyId, dto.score);
   }
 
   /**
@@ -39,10 +42,20 @@ export class RatingsController {
     return this.ratingsService.getByUser(userId);
   }
 
+  /** La calificación que le puso a esta propiedad quien mira (cuenta o cookie). */
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':propertyId/mine')
+  async getMyRating(
+    @Param('propertyId', ParseIntPipe) propertyId: number,
+    @Actor() actor: InteractionActor,
+  ) {
+    return this.ratingsService.getMine(actor, propertyId);
+  }
+
   @Get(':propertyId')
   async getByProperty(
-  @Param('propertyId', ParseIntPipe) propertyId: number,
+    @Param('propertyId', ParseIntPipe) propertyId: number,
   ) {
-  return this.ratingsService.getByProperty(propertyId);
-}
+    return this.ratingsService.getByProperty(propertyId);
+  }
 }

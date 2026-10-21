@@ -1,25 +1,42 @@
-import { Entity, ManyToOne, PrimaryColumn, JoinColumn } from 'typeorm';
+import { Entity, ManyToOne, PrimaryGeneratedColumn, Column, JoinColumn, Index } from 'typeorm';
 import { User } from 'src/modules/users/entities/user.entity';
 import { Post } from './post.entity';
 
 /**
- * "Me gusta" de un usuario sobre una publicación.
+ * "Me gusta" sobre una publicación — de un usuario registrado O de un
+ * visitante sin sesión.
  *
- * Copia el molde de `Favorite`: PK COMPUESTA (user_id + post_id), que es lo que
- * garantiza a nivel de base que un usuario no pueda likear dos veces la misma
- * publicación aunque lleguen dos requests simultáneos.
+ * Antes la PK era COMPUESTA (user_id + post_id): garantizaba un like por
+ * usuario, pero una PK no admite NULL y los visitantes no tienen `user_id`.
+ * Ahora hay un `id` propio y la unicidad la dan dos índices únicos PARCIALES:
+ *  - registrado: (user_id, post_id) donde user_id no es NULL;
+ *  - visitante:  (visitor_id, post_id) donde user_id es NULL (cookie `ct_vid`).
+ * Siguen frenando a nivel base los duplicados por requests simultáneos.
  */
+@Index(['user_id', 'post_id'], { unique: true, where: '"user_id" IS NOT NULL' })
+@Index(['visitor_id', 'post_id'], { unique: true, where: '"user_id" IS NULL' })
+@Index(['post_id'])
 @Entity('post_likes')
 export class PostLike {
-  @PrimaryColumn()
-  user_id: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-  @PrimaryColumn()
+  @Column({ type: 'int', nullable: true })
+  user_id: number | null;
+
+  @Column()
   post_id: number;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  /** Cookie anónima `ct_vid` y hash de IP — internos, nunca salen (`select: false`). */
+  @Column({ type: 'varchar', length: 36, nullable: true, select: false })
+  visitor_id: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  ip_hash: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user: User | null;
 
   @ManyToOne(() => Post, (post) => post.likes, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'post_id' })

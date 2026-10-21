@@ -6,7 +6,10 @@ import {
   BadGatewayException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, LessThan, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, IsNull, LessThan, Repository, SelectQueryBuilder } from 'typeorm';
+import { InteractionActor, displayName } from 'src/common/interaction/interaction-actor';
+import { isHoneypotFilled } from 'src/common/interaction/interaction.dto';
+import { CreatePostCommentDto, ReplyPostCommentDto } from './dto/post-comment.dto';
 import { Express } from 'express';
 import { Post } from './entities/post.entity';
 import { PostLike } from './entities/post-like.entity';
@@ -49,6 +52,30 @@ interface VerifiedVideo {
   duration: number | null;
 }
 
+/** Quién mira o reacciona: su cuenta, o su cookie de visitante si no hay sesión. */
+type Viewer = Pick<InteractionActor, 'userId' | 'visitorId'>;
+
+/**
+ * Filtro de "los likes de quien mira": por `user_id` si está logueado, o por
+ * `visitor_id` entre las filas ANÓNIMAS si no. `null` si no hay forma de
+ * identificarlo (sin sesión ni cookie).
+ */
+function likeOwner(viewer?: Viewer): FindOptionsWhere<PostLike> | null {
+  if (viewer?.userId) return { user_id: viewer.userId };
+  if (viewer?.visitorId) return { visitor_id: viewer.visitorId, user_id: IsNull() };
+  return null;
+}
+
+/** Forma pública de un comentario (y sus respuestas): nombre a mostrar + si es anónimo. */
+function toPublicComment<T extends PostComment>(c: T): T & { authorName: string; isAnonymous: boolean } {
+  return {
+    ...c,
+    authorName: displayName(c),
+    isAnonymous: c.userId === null,
+    ...(c.replies ? { replies: c.replies.map(toPublicComment) } : {}),
+  };
+}
+
 /** Una imagen nueva ya subida a Cloudinary en este request. */
 interface UploadedImage {
   publicId: string;
@@ -83,10 +110,11 @@ export class PostsService {
   // LISTADO PÚBLICO
   // ---------------------------------------------------------------
   /**
-   * `viewerId` (opcional) permite marcar en cada publicación si el usuario que
-   * mira ya le dio like, sin que el frontend tenga que pedir los likes aparte.
+   * `viewer` (opcional) permite marcar en cada publicación si quien mira ya le
+   * dio like — por su cuenta si está logueado, o por su cookie de visitante
+   * (`ct_vid`) si no — sin que el frontend tenga que pedir los likes aparte.
    */
-  async findAll(sortBy: PostSortBy = PostSortBy.RECENT, viewerId?: number) {
+  async findAll(sortBy: PostSortBy = PostSortBy.RECENT, viewer?: Viewer) {
     try {
       const qb = this.postRepo
         .createQueryBuilder('post')
@@ -120,13 +148,14 @@ export class PostsService {
       qb.addOrderBy('media.order', 'ASC').addOrderBy('media.id', 'ASC');
 
       const posts = await qb.getMany();
-      if (!viewerId || posts.length === 0) {
+      const who = likeOwner(viewer);
+      if (!who || posts.length === 0) {
         return posts.map((p) => ({ ...p, likedByMe: false }));
       }
 
       const liked = await this.likeRepo.find({
-        where: { user_id: viewerId },
-        select: ['post_id'],
+        where: who,
+        select: { id: true, post_id: true },
       });
       const likedIds = new Set(liked.map((l) => l.post_id));
 
@@ -136,7 +165,7 @@ export class PostsService {
     }
   }
 
-  async findOne(id: number, viewerId?: number) {
+  async findOne(id: number, viewer?: Viewer) {
     const qb = this.postRepo
       .createQueryBuilder('post')
       .leftJoin('post.agent', 'agent')
@@ -147,8 +176,9 @@ export class PostsService {
 
     if (!post) throw new NotFoundException(`No existe la publicación con ID ${id}`);
 
-    const likedByMe = viewerId
-      ? !!(await this.likeRepo.findOneBy({ user_id: viewerId, post_id: id }))
+    const who = likeOwner(viewer);
+    const likedByMe = who
+      ? !!(await this.likeRepo.findOne({ where: { ...who, post_id: id }, select: { id: true } }))
       : false;
 
     return { ...post, likedByMe };
@@ -538,18 +568,27 @@ export class PostsService {
    * que ser atómicos, si no el contador se desincroniza ante requests en
    * paralelo. El `UPDATE ... likesCount + 1` se hace en SQL (no leyendo y
    * escribiendo desde JS) para que sea seguro bajo concurrencia.
+   *
+   * Abierto a visitantes sin sesión: el like se ata a su cookie `ct_vid`.
+   * Sin sesión NI cookie no hay forma de evitar duplicados → 400.
    */
-  async toggleLike(postId: number, userId: number) {
+  async toggleLike(postId: number, actor: InteractionActor) {
+    const who = likeOwner(actor);
+    if (!who) {
+      throw new BadRequestException(
+        'No pudimos identificar tu navegador para guardar el "me gusta". Revisá que las cookies estén habilitadas.',
+      );
+    }
     await ensureExists(this.postRepo, postId, 'La publicación');
 
     return this.dataSource.transaction(async (manager) => {
       const likeRepo = manager.getRepository(PostLike);
       const postRepo = manager.getRepository(Post);
 
-      const existing = await likeRepo.findOneBy({ user_id: userId, post_id: postId });
+      const existing = await likeRepo.findOne({ where: { ...who, post_id: postId }, select: { id: true } });
 
       if (existing) {
-        await likeRepo.delete({ user_id: userId, post_id: postId });
+        await likeRepo.delete({ id: existing.id });
         // GREATEST(...) evita que el contador se vaya a negativo si alguna vez
         // quedó desincronizado.
         await postRepo
@@ -560,9 +599,14 @@ export class PostsService {
           .execute();
       } else {
         try {
-          await likeRepo.insert({ user_id: userId, post_id: postId });
+          await likeRepo.insert({
+            user_id: actor.userId,
+            visitor_id: actor.userId ? null : actor.visitorId,
+            ip_hash: actor.ipHash,
+            post_id: postId,
+          });
         } catch (error) {
-          // Dos POST simultáneos chocan contra la PK compuesta: el like ya
+          // Dos POST simultáneos chocan contra el índice único: el like ya
           // existe, así que no hay nada que hacer (y no se toca el contador).
           if (isUniqueViolation(error)) {
             const fresh = await postRepo.findOneBy({ id: postId });
@@ -622,19 +666,31 @@ export class PostsService {
       qb.andWhere('comment.isHidden = false');
     }
 
-    return qb.getMany();
+    return (await qb.getMany()).map(toPublicComment);
   }
 
-  async createComment(postId: number, userId: number, content: string) {
+  /**
+   * Comentario raíz — de un usuario logueado (asociado a su cuenta, como
+   * siempre) o de un VISITANTE sin sesión (`userId: null` + nombre opcional).
+   */
+  async createComment(postId: number, actor: InteractionActor, dto: CreatePostCommentDto) {
     const post = await ensureExists(this.postRepo, postId, 'La publicación');
+    const guestName = actor.userId ? null : dto.guestName?.trim() || null;
 
-    const comment = this.commentRepo.create({
-      content,
-      postId,
-      userId,
-      parentCommentId: null,
-    });
-    const saved = await this.commentRepo.save(comment);
+    // Honeypot completo = bot: respuesta "exitosa" sin guardar nada.
+    if (isHoneypotFilled(dto)) return this.fakeComment(postId, dto.content, guestName, null);
+
+    const saved = await this.commentRepo.save(
+      this.commentRepo.create({
+        content: dto.content,
+        postId,
+        userId: actor.userId,
+        guestName,
+        visitorId: actor.visitorId,
+        ipHash: actor.ipHash,
+        parentCommentId: null,
+      }),
+    );
     const withUser = await this.findCommentWithUser(saved.id);
 
     // Avisar al admin que comentaron su publicación. En background: si el
@@ -643,53 +699,71 @@ export class PostsService {
     if (withUser?.user?.role !== Role.ADMIN) {
       this.notificationService
         .notifyAdminNewPostComment({
-          userName: withUser?.user?.name ?? 'Un usuario',
+          userName: withUser?.user?.name ?? (guestName ? `${guestName} (visitante)` : 'Un visitante'),
           postDescription: post?.description ?? '',
           postId,
-          commentPreview: content,
-          relatedUserId: userId,
+          commentPreview: dto.content,
+          relatedUserId: actor.userId ?? null,
         })
         .catch((err) =>
           this.logger.error('Error notificando el comentario al admin', err),
         );
     }
 
-    return withUser;
+    return withUser ? toPublicComment(withUser) : null;
   }
 
-  /** Respuesta del admin a un comentario existente. */
-  async replyComment(parentCommentId: number, userId: number, content: string) {
+  /** Respuesta a un comentario existente — usuarios logueados y visitantes. */
+  async replyComment(parentCommentId: number, actor: InteractionActor, dto: ReplyPostCommentDto) {
     const parent = await this.commentRepo.findOneBy({ id: parentCommentId });
     if (!parent) throw new NotFoundException('El comentario no existe');
 
     // Una respuesta de una respuesta se cuelga del mismo comentario raíz: la UI
     // solo muestra dos niveles.
     const rootId = parent.parentCommentId ?? parent.id;
+    const guestName = actor.userId ? null : dto.guestName?.trim() || null;
 
-    const reply = this.commentRepo.create({
-      content,
-      postId: parent.postId,
-      userId,
-      parentCommentId: rootId,
-    });
-    const saved = await this.commentRepo.save(reply);
+    if (isHoneypotFilled(dto)) return this.fakeComment(parent.postId, dto.content, guestName, rootId);
+
+    const saved = await this.commentRepo.save(
+      this.commentRepo.create({
+        content: dto.content,
+        postId: parent.postId,
+        userId: actor.userId,
+        guestName,
+        visitorId: actor.visitorId,
+        ipHash: actor.ipHash,
+        parentCommentId: rootId,
+      }),
+    );
     const withUser = await this.findCommentWithUser(saved.id);
 
-    // Avisar al autor del comentario respondido — salvo que se responda a sí
-    // mismo. En background: si el aviso falla, la respuesta ya se guardó.
-    if (parent.userId !== userId) {
+    // Avisar al autor del comentario respondido — solo si es un usuario
+    // registrado (a un visitante no hay a quién avisarle) y no se responde a
+    // sí mismo. En background: si el aviso falla, la respuesta ya se guardó.
+    if (parent.userId !== null && parent.userId !== actor.userId) {
       this.notificationService
         .notifyCommentReply({
           commentOwnerId: parent.userId,
-          responderName: withUser?.user?.name ?? 'Un usuario',
+          responderName: withUser?.user?.name ?? (guestName ? `${guestName} (visitante)` : 'Un visitante'),
           responderIsAdmin: withUser?.user?.role === Role.ADMIN,
-          replyPreview: content,
+          replyPreview: dto.content,
           postId: parent.postId,
         })
         .catch((err) => this.logger.error('Error notificando la respuesta', err));
     }
 
-    return withUser;
+    return withUser ? toPublicComment(withUser) : null;
+  }
+
+  /** Respuesta de un comentario "guardado" para un bot (honeypot): no existe en la base. */
+  private fakeComment(postId: number, content: string, guestName: string | null, parentCommentId: number | null) {
+    return toPublicComment(
+      this.commentRepo.create({
+        id: 0, content, postId, userId: null, guestName, parentCommentId,
+        isHidden: false, createdAt: new Date(), user: null,
+      }),
+    );
   }
 
   async toggleHideComment(commentId: number) {

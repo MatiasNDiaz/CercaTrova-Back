@@ -18,6 +18,8 @@ import { GetUser } from 'src/common/decorators/get-user.decorator';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
+import { Actor, InteractionActor } from 'src/common/interaction/interaction-actor';
+import { CommentRateLimitGuard } from 'src/common/interaction/interaction-rate-limit.guard';
 
 /**
  * Comentarios de una PROPIEDAD (distintos de los de Publicaciones, que viven
@@ -34,16 +36,20 @@ export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
   // -----------------------------------------------------
-  // CREAR (cualquier usuario logueado)
+  // CREAR (cualquiera: logueado o visitante sin sesión)
   // -----------------------------------------------------
-  @UseGuards(JwtAuthGuard)
+  // `OptionalJwtAuthGuard`: si hay sesión válida el comentario queda asociado
+  // a la cuenta; sin sesión (o con un token vencido) se guarda como visitante.
+  // `CommentRateLimitGuard` va DESPUÉS, para poder contar por usuario o por
+  // visitante.
+  @UseGuards(OptionalJwtAuthGuard, CommentRateLimitGuard)
   @Post()
   create(
     @Param('propertyId', ParseIntPipe) propertyId: number,
-    @GetUser('id') userId: number,
+    @Actor() actor: InteractionActor,
     @Body() dto: CreateCommentDto,
   ) {
-    return this.commentsService.create(propertyId, userId, dto);
+    return this.commentsService.create(propertyId, actor, dto);
   }
 
   // -----------------------------------------------------

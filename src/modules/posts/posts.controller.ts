@@ -19,6 +19,8 @@ import { Role } from '../users/enums/role.enum';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
+import { Actor, InteractionActor } from 'src/common/interaction/interaction-actor';
+import { CommentRateLimitGuard, ReactionRateLimitGuard } from 'src/common/interaction/interaction-rate-limit.guard';
 
 type MulterFile = Express.Multer.File;
 
@@ -64,8 +66,9 @@ export class PostsController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get()
-  findAll(@Query() query: FindPostsDto, @GetUser('id') viewerId?: number) {
-    return this.postsService.findAll(query.sortBy, viewerId);
+  findAll(@Query() query: FindPostsDto, @Actor() viewer: InteractionActor) {
+    // `likedByMe` por cuenta (logueado) o por cookie de visitante (anónimo).
+    return this.postsService.findAll(query.sortBy, viewer);
   }
 
   /**
@@ -83,8 +86,8 @@ export class PostsController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number, @GetUser('id') viewerId?: number) {
-    return this.postsService.findOne(id, viewerId);
+  findOne(@Param('id', ParseIntPipe) id: number, @Actor() viewer: InteractionActor) {
+    return this.postsService.findOne(id, viewer);
   }
 
   // ── SUBIDA DE VIDEOS (ADMIN) ───────────────────────────────────
@@ -133,13 +136,16 @@ export class PostsController {
   }
 
   // ── LIKE ───────────────────────────────────────────────────────
-  // Sin `@Roles`: alcanza con estar logueado (cualquier rol).
+  // Abierto a todos: logueado (se ata a su cuenta) o visitante sin sesión (se
+  // ata a su cookie `ct_vid`). Un token vencido se trata como anónimo, no 401.
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard, ReactionRateLimitGuard)
   @HttpPost(':id/like')
   toggleLike(
     @Param('id', ParseIntPipe) id: number,
-    @GetUser('id') userId: number,
+    @Actor() actor: InteractionActor,
   ) {
-    return this.postsService.toggleLike(id, userId);
+    return this.postsService.toggleLike(id, actor);
   }
 
   // ── COMENTARIOS ────────────────────────────────────────────────
@@ -160,25 +166,30 @@ export class PostsController {
     return this.postsService.findComments(id, role === Role.ADMIN);
   }
 
+  // Comentar y responder: abiertos a TODOS (logueados y visitantes sin
+  // sesión), como en una red social. Si hay sesión, el comentario queda en la
+  // cuenta; si no, como visitante con el nombre opcional que dejó. El frontend
+  // distingue visualmente las respuestas del admin.
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard, CommentRateLimitGuard)
   @HttpPost(':id/comments')
   createComment(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreatePostCommentDto,
-    @GetUser('id') userId: number,
+    @Actor() actor: InteractionActor,
   ) {
-    return this.postsService.createComment(id, userId, dto.content);
+    return this.postsService.createComment(id, actor, dto);
   }
 
-  // Responder está abierto a CUALQUIER usuario logueado (no solo al admin):
-  // la conversación funciona como en una red social. Quién responde sale del
-  // token, y el frontend distingue visualmente las respuestas del admin.
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard, CommentRateLimitGuard)
   @HttpPost('comments/:commentId/reply')
   replyComment(
     @Param('commentId', ParseIntPipe) commentId: number,
     @Body() dto: ReplyPostCommentDto,
-    @GetUser('id') userId: number,
+    @Actor() actor: InteractionActor,
   ) {
-    return this.postsService.replyComment(commentId, userId, dto.content);
+    return this.postsService.replyComment(commentId, actor, dto);
   }
 
   @Roles(Role.ADMIN)

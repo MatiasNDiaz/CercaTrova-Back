@@ -27,15 +27,34 @@ export class Comment {
   created_at: Date;
 
   // 👇 columnas necesarias para filtrar fácilmente
-  @Column()
-  userId: number;
+  /**
+   * Autor registrado. `null` = comentario de un VISITANTE sin sesión (desde la
+   * actualización "interacciones sin iniciar sesión"). Ver `guestName`.
+   */
+  @Column({ type: 'int', nullable: true })
+  userId: number | null;
 
   @Column()
   propertyId: number;
 
+  /** Nombre que dejó el visitante (opcional). Sin nombre se muestra "Visitante". */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  guestName: string | null;
+
+  /**
+   * Cookie anónima `ct_vid` del visitante y hash de su IP — apoyo contra
+   * abusos. `select: false`: NUNCA salen en una respuesta salvo que se pidan
+   * explícitamente.
+   */
+  @Column({ type: 'varchar', length: 36, nullable: true, select: false })
+  visitorId: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  ipHash: string | null;
+
   // 👇 relaciones
-  @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE' })
-  user: User;
+  @ManyToOne(() => User, user => user.comments, { onDelete: 'CASCADE', nullable: true })
+  user: User | null;
 
   @ManyToOne(() => Property, property => property.comments, { onDelete: 'CASCADE' })
   property: Property;

@@ -37,12 +37,24 @@ export class PostComment {
   @JoinColumn({ name: 'postId' })
   post: Post;
 
-  @Column()
-  userId: number;
+  /** Autor registrado. `null` = comentario de un visitante sin sesión (ver `guestName`). */
+  @Column({ type: 'int', nullable: true })
+  userId: number | null;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'userId' })
-  user: User;
+  user: User | null;
+
+  /** Nombre que dejó el visitante (opcional). Sin nombre se muestra "Visitante". */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  guestName: string | null;
+
+  /** Cookie anónima `ct_vid` y hash de IP — internos, nunca salen (`select: false`). */
+  @Column({ type: 'varchar', length: 36, nullable: true, select: false })
+  visitorId: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false })
+  ipHash: string | null;
 
   /**
    * Comentario al que responde. `null` = comentario raíz.
