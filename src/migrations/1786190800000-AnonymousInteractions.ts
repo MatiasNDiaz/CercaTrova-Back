@@ -23,9 +23,9 @@ import { MigrationInterface, QueryRunner } from "typeorm";
  * - En `post_likes`, `ADD "id" SERIAL` numera las filas existentes solo. La PK
  *   vieja se cambia por la nueva y el índice único parcial de registrados
  *   reproduce exactamente la garantía que daba (un like por usuario y post).
- * - El `CHECK` de score se agrega sobre datos que ya cumplían 1..5 (el DTO lo
- *   validaba desde siempre). Si hubiera alguna fila fuera de rango, la
- *   migración fallaría ANTES de cambiar nada (corre en una transacción).
+ * - El `CHECK` de score va como `NOT VALID`: aplica a las filas nuevas y no
+ *   revisa las existentes (que igual ya cumplían 1..5: el DTO lo validaba).
+ * - Corre en UNA transacción: si algo falla, no queda nada a medias.
  *
  * ## `down()`
  *
@@ -54,7 +54,12 @@ export class AnonymousInteractions1786190800000 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "ratings" ADD "visitorId" character varying(36)`);
         await queryRunner.query(`ALTER TABLE "ratings" ADD "ipHash" character varying(64)`);
         await queryRunner.query(`CREATE UNIQUE INDEX "IDX_b73e69bd27140e2cc1759357a7" ON "ratings" ("visitorId", "propertyId") WHERE "userId" IS NULL`);
-        await queryRunner.query(`ALTER TABLE "ratings" ADD CONSTRAINT "CHK_1f8fdfe99f58838dd4397805e9" CHECK ("score" BETWEEN 1 AND 5)`);
+        // `NOT VALID`: rige para toda fila nueva o modificada, pero no revisa
+        // las existentes. Esta migración corre SOLA al arrancar en producción
+        // (`migrationsRun`), sin forma de revisar los datos antes: una
+        // calificación vieja fuera de rango no puede frenar el arranque. (El
+        // DTO validó 1..5 desde siempre, así que no debería haber ninguna.)
+        await queryRunner.query(`ALTER TABLE "ratings" ADD CONSTRAINT "CHK_1f8fdfe99f58838dd4397805e9" CHECK ("score" BETWEEN 1 AND 5) NOT VALID`);
 
         // ── "Me gusta" de publicaciones ──
         await queryRunner.query(`ALTER TABLE "post_likes" ADD "id" SERIAL NOT NULL`);

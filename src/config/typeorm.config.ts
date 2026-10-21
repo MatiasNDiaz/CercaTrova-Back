@@ -42,5 +42,14 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
     // a producción hay que generar migrations de TypeORM (ver
     // SECURITY_FIXES_2.md) y correr con NODE_ENV=production.
     synchronize: process.env.NODE_ENV !== 'production',
+    // En PRODUCCIÓN las migraciones pendientes se aplican SOLAS al arrancar,
+    // antes de atender requests. Antes había que correr `migration:run` a
+    // mano contra Railway por un túnel SSH; cuando el túnel no levanta, el
+    // código nuevo (que espera columnas nuevas) quedaba desplegado sobre un
+    // schema viejo. `all`: todas las pendientes en UNA transacción — si una
+    // falla, no se aplica ninguna y la base queda como estaba.
+    // En desarrollo no: ahí manda `synchronize`.
+    migrationsRun: process.env.NODE_ENV === 'production',
+    migrationsTransactionMode: 'all',
 // dropSchema: true, // Descomenta esta línea si quieres que se borren las tablas y se vuelvan a crear (útil en desarrollo)
 };
