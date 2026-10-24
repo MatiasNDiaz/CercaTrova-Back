@@ -22,10 +22,10 @@ function sameSecret(received: string, expected: string): boolean {
  * IP REAL del visitante cuando la request llega a través de Vercel.
  *
  * ── Por qué hace falta ───────────────────────────────────────────────────────
- * El proxy de Railway descarta el `X-Forwarded-For` que recibe y escribe la IP
- * de quien se le conecta (medido en producción). Por el camino normal
- * (navegador → Vercel `/api/*` → Railway) esa IP es la de Vercel, compartida
- * por muchos visitantes: el rate limit (100/min por IP) los contaba juntos.
+ * Con `trust proxy` bien configurado (ver `main.ts`), `req.ip` es quien se
+ * conectó a Railway. Por el camino normal (navegador → Vercel `/api/*` →
+ * Railway) esa IP es la de Vercel, compartida por muchos visitantes: el rate
+ * limit (100/min por IP) los contaba juntos (medido en producción).
  *
  * ── Cómo ─────────────────────────────────────────────────────────────────────
  * El middleware de Next (en Vercel) manda la IP del visitante en

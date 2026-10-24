@@ -21,7 +21,7 @@ const body = (res: { body: unknown }) => res.body as IpBody;
 
 function buildApp(secret: string | undefined) {
   const app = express();
-  app.set('trust proxy', 1);
+  app.set('trust proxy', 2);
   app.use(trustedProxyMiddleware(secret));
   app.get('/ip', (req, res) =>
     res.json({
@@ -35,20 +35,23 @@ function buildApp(secret: string | undefined) {
   return app;
 }
 
-describe('trust proxy = 1 (el proxy de Railway reescribe X-Forwarded-For)', () => {
+// Medido en producción: Railway deja la IP del cliente y agrega detrás la de
+// un proxy interno suyo (que cambia entre requests). Con 2 saltos de
+// confianza queda el cliente; una IP inventada a la izquierda no se usa.
+describe('trust proxy = 2 (Railway agrega un salto interno)', () => {
   const app = buildApp(undefined);
 
-  it('toma la IP que escribió Railway, no la del socket', async () => {
+  it('toma la IP del cliente, no la del proxy interno de Railway', async () => {
     const res = await request(app)
       .get('/ip')
-      .set('X-Forwarded-For', '200.1.2.3');
+      .set('X-Forwarded-For', '200.1.2.3, 10.250.0.7');
     expect(body(res).ip).toBe('200.1.2.3');
   });
 
-  it('si alguien antepone IPs inventadas, se queda con la que agregó el proxy', async () => {
+  it('si alguien antepone IPs inventadas, se queda con la que registró Railway', async () => {
     const res = await request(app)
       .get('/ip')
-      .set('X-Forwarded-For', '6.6.6.6, 200.1.2.3');
+      .set('X-Forwarded-For', '6.6.6.6, 200.1.2.3, 10.250.0.7');
     expect(body(res).ip).toBe('200.1.2.3');
   });
 });

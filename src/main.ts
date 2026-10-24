@@ -17,13 +17,16 @@ async function bootstrap() {
   // todos los visitantes juntos → 429 para cualquiera, incluido el admin en
   // `/auth/me` (una de las causas de la pantalla en blanco).
   //
-  // El proxy de Railway descarta el `X-Forwarded-For` entrante y escribe la IP
-  // de quien se le conecta (medido en producción). Confiar en ESE salto (1)
-  // da esa IP y no se puede falsificar. Para quien llega vía Vercel esa IP es
-  // la de Vercel: la del visitante la aporta `trustedProxyMiddleware` (abajo).
+  // Medido en producción: con `trust proxy = 2` el límite de login corta en
+  // el 6.º intento y una IP inventada en `X-Forwarded-For` no cambia nada; con
+  // 1, la IP que quedaba era la de un proxy INTERNO de Railway (cambiaba entre
+  // requests y el límite no cortaba). O sea: Railway agrega su propio salto
+  // detrás del que registra al cliente. Con 2 se confía en esos dos y `req.ip`
+  // es quien se conectó a Railway — para quien llega vía Vercel, la IP de
+  // Vercel: la del visitante la aporta `trustedProxyMiddleware` (abajo).
   // Configurable con TRUST_PROXY_HOPS si cambia la cadena de proxies.
-  const hops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
-  app.set('trust proxy', Number.isFinite(hops) && hops >= 0 ? hops : 1);
+  const hops = Number(process.env.TRUST_PROXY_HOPS ?? 2);
+  app.set('trust proxy', Number.isFinite(hops) && hops >= 0 ? hops : 2);
   app.use(trustedProxyMiddleware(process.env.PROXY_SHARED_SECRET));
 
   // 🔒 SEGURIDAD (F9): headers de seguridad estándar (X-Content-Type-Options,
