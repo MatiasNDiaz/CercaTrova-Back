@@ -60,6 +60,16 @@ export class StatisticsController {
     return this.statisticsService.traffic(query.range ?? StatsRange.MONTH);
   }
 
+  /**
+   * Tarjeta de visitantes: personas, páginas vistas y páginas por persona del
+   * período (`day` = hoy, `week` = últimos 7 días, `month` = últimos 30), más
+   * el período anterior para la comparación. Criterio en `visitors.ts`.
+   */
+  @Get('visitors')
+  visitors(@Query() query: StatisticsQueryDto) {
+    return this.statisticsService.visitors(query.range ?? StatsRange.MONTH);
+  }
+
   @Get('registrations')
   registrations(@Query() query: StatisticsQueryDto) {
     return this.statisticsService.registrations(query.range ?? StatsRange.MONTH);

@@ -41,6 +41,7 @@ export class TrackingController {
       path: dto.path,
       userId,
       role,
+      userAgent: req.headers['user-agent'],
     });
   }
 

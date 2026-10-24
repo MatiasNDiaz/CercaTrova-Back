@@ -6,6 +6,7 @@ import { PropertyView } from './entities/property-view.entity';
 import { FilterUsage } from './entities/filter-usage.entity';
 import { PropertyFilterDto } from '../properties/dto/property-filter.dto';
 import { Role } from '../users/enums/role.enum';
+import { isBotUserAgent } from './bot-user-agent';
 
 /**
  * Registro de eventos para las estadísticas del panel (Fase 0).
@@ -30,13 +31,19 @@ export class TrackingService {
     private readonly filterRepo: Repository<FilterUsage>,
   ) {}
 
-  /** Registra una visita a una página. Devuelve el id para poder cerrarla después. */
+  /**
+   * Registra una visita a una página. Devuelve el id para poder cerrarla después.
+   * Las de bots / crawlers (por user-agent) no se guardan: inflaban las
+   * estadísticas de visitantes. Ver `isBotUserAgent`.
+   */
   async recordVisit(data: {
     visitorId: string;
     path: string;
     userId?: number | null;
     role?: Role;
+    userAgent?: string;
   }): Promise<{ visitId: number | null }> {
+    if (isBotUserAgent(data.userAgent)) return { visitId: null };
     try {
       const visit = await this.visitRepo.save(
         this.visitRepo.create({

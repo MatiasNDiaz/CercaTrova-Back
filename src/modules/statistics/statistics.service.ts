@@ -13,6 +13,9 @@ import { Comment } from '../comments/entities/comment.entity';
 import { Rating } from '../ratings/entities/rating.entity';
 import { PropertyType } from '../typeOfProperty/entities/typeOfProperty.entity';
 import { StatsRange, rangeToDate } from './dto/statistics-query.dto';
+import {
+  Period, REAL_VISITS_SQL, percentChange, pagesPerVisitor, realVisitsParams, visitorPeriods,
+} from './visitors';
 
 /** Fila estándar de todos los rankings: etiqueta, cantidad y porcentaje. */
 export interface StatRow {
@@ -436,45 +439,53 @@ export class StatisticsService {
   // ═══════════════════════════════════════════════════════════
   // 7. TRÁFICO
   // ═══════════════════════════════════════════════════════════
+  /**
+   * Mismas reglas que la tarjeta de visitantes (`visitors.ts`): sin el admin
+   * ni sus navegadores, sin visitas sin cookie y sin recargas de la misma
+   * página dentro de los 30 minutos. Así el gráfico, el ranking de páginas y
+   * la tarjeta no pueden mostrar números que se contradigan.
+   */
   async traffic(range: StatsRange) {
-    const since = rangeToDate(range);
+    const params = realVisitsParams({ from: rangeToDate(range), to: new Date() });
 
-    // Las visitas del admin quedan fuera de todas las métricas de tráfico.
-    const base = () =>
-      this.visitRepo
-        .createQueryBuilder('v')
-        .where('v."createdAt" > :since', { since })
-        .andWhere('v."isAdmin" = false');
-
-    const [totalVisitas, unicos, logueados] = await Promise.all([
-      base().getCount(),
-      base().select('COUNT(DISTINCT v."visitorId")', 'n').getRawOne<{ n: string }>(),
-      base().andWhere('v."userId" IS NOT NULL').select('COUNT(DISTINCT v."userId")', 'n').getRawOne<{ n: string }>(),
-    ]);
+    const [totales] = await this.visitRepo.query<
+      { unicos: string; visitas: string; logueados: string }[]
+    >(
+      `SELECT COUNT(DISTINCT r."visitorId") AS unicos,
+              COUNT(*) FILTER (WHERE r."countsAsView") AS visitas,
+              COUNT(DISTINCT r."userId") AS logueados
+       FROM (${REAL_VISITS_SQL}) r`,
+      params,
+    );
 
     // Serie por día para el gráfico de barras.
-    const serie = await base()
-      .select("TO_CHAR(DATE_TRUNC('day', v.\"createdAt\"), 'YYYY-MM-DD')", 'dia')
-      .addSelect('COUNT(*)', 'visitas')
-      .addSelect('COUNT(DISTINCT v."visitorId")', 'unicos')
-      .groupBy("DATE_TRUNC('day', v.\"createdAt\")")
-      .orderBy("DATE_TRUNC('day', v.\"createdAt\")", 'ASC')
-      .getRawMany<{ dia: string; visitas: string; unicos: string }>();
+    const serie = await this.visitRepo.query<{ dia: string; visitas: string; unicos: string }[]>(
+      `SELECT TO_CHAR(DATE_TRUNC('day', r."createdAt"), 'YYYY-MM-DD') AS dia,
+              COUNT(*) FILTER (WHERE r."countsAsView") AS visitas,
+              COUNT(DISTINCT r."visitorId") AS unicos
+       FROM (${REAL_VISITS_SQL}) r
+       GROUP BY 1
+       ORDER BY 1 ASC`,
+      params,
+    );
 
-    const paginas = await base()
-      .select('v.path', 'path')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('v.path')
-      .orderBy('COUNT(*)', 'DESC')
-      .limit(TOP_N)
-      .getRawMany<{ path: string; count: string }>();
+    const paginas = await this.visitRepo.query<{ path: string; count: string }[]>(
+      `SELECT r.path, COUNT(*) FILTER (WHERE r."countsAsView") AS count
+       FROM (${REAL_VISITS_SQL}) r
+       GROUP BY r.path
+       ORDER BY 2 DESC
+       LIMIT ${TOP_N}`,
+      params,
+    );
 
+    const unicos = Number(totales?.unicos ?? 0);
+    const logueados = Number(totales?.logueados ?? 0);
     return {
       range,
-      totalVisitas,
-      visitantesUnicos: Number(unicos?.n ?? 0),
-      visitantesLogueados: Number(logueados?.n ?? 0),
-      visitantesAnonimos: Number(unicos?.n ?? 0) - Number(logueados?.n ?? 0),
+      totalVisitas: Number(totales?.visitas ?? 0),
+      visitantesUnicos: unicos,
+      visitantesLogueados: logueados,
+      visitantesAnonimos: Math.max(unicos - logueados, 0),
       porDia: serie.map((s) => ({
         dia: s.dia,
         visitas: Number(s.visitas),
@@ -483,6 +494,48 @@ export class StatisticsService {
       paginasMasVistas: this.toRows(
         new Map(paginas.map((p) => [p.path, Number(p.count)])),
       ),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // 7.b VISITANTES — tarjeta "X personas visitaron Cerca Trova"
+  // ═══════════════════════════════════════════════════════════
+  /** Personas y páginas vistas de un período (reglas en `visitors.ts`). */
+  private async visitorSummary(period: Period) {
+    const [row] = await this.visitRepo.query<{ unicos: string; vistas: string }[]>(
+      `SELECT COUNT(DISTINCT r."visitorId") AS unicos,
+              COUNT(*) FILTER (WHERE r."countsAsView") AS vistas
+       FROM (${REAL_VISITS_SQL}) r`,
+      realVisitsParams(period),
+    );
+    const uniqueVisitors = Number(row?.unicos ?? 0);
+    const pageViews = Number(row?.vistas ?? 0);
+    return {
+      uniqueVisitors,
+      pageViews,
+      pagesPerVisitor: pagesPerVisitor(pageViews, uniqueVisitors),
+    };
+  }
+
+  /**
+   * Día = HOY (desde las 00:00 de Argentina), semana = últimos 7 días, mes =
+   * últimos 30, cada uno comparado con el período anterior equivalente.
+   */
+  async visitors(range: StatsRange) {
+    const periods = visitorPeriods(range);
+    const [current, previous] = await Promise.all([
+      this.visitorSummary(periods.current),
+      this.visitorSummary(periods.previous),
+    ]);
+    return {
+      range,
+      period: { label: periods.label, ...periods.current },
+      ...current,
+      previous: { label: periods.previousLabel, ...periods.previous, ...previous },
+      change: {
+        uniqueVisitors: percentChange(current.uniqueVisitors, previous.uniqueVisitors),
+        pageViews: percentChange(current.pageViews, previous.pageViews),
+      },
     };
   }
 
