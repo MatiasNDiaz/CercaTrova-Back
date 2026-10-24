@@ -42,8 +42,8 @@ describe('InteractionActor', () => {
     expect(actorFromRequest(req({ user: null, cookies: { ct_vid: VID } })).userId).toBeNull();
   });
 
-  it('usa la IP real del cliente detrás del proxy (x-forwarded-for)', () => {
-    expect(clientIp(req({ headers: { 'x-forwarded-for': '200.1.2.3, 76.76.21.1' } }))).toBe('200.1.2.3');
+  it('usa req.ip (resuelto por trust proxy) y NO un x-forwarded-for que mande el cliente', () => {
+    expect(clientIp(req({ ip: '200.1.2.3', headers: { 'x-forwarded-for': '6.6.6.6' } }))).toBe('200.1.2.3');
   });
 
   it('la IP se guarda solo como hash SHA-256 (nunca en texto plano)', () => {
@@ -128,7 +128,7 @@ describe('Rate limit de interacciones', () => {
   it('cambiar de cookie no saltea el límite de la IP', () => {
     process.env.INTERACTION_COMMENTS_PER_MIN = '1'; // por IP = 3
     const guard = new CommentRateLimitGuard();
-    const ip = { headers: { 'x-forwarded-for': '200.9.9.9' } };
+    const ip = { ip: '200.9.9.9' };
     const ids = ['a', 'b', 'c', 'd'].map((c) => `${c}${VID.slice(1)}`);
     ids.slice(0, 3).forEach((id) => expect(guard.canActivate(ctx(req({ ...ip, cookies: { ct_vid: id } })))).toBe(true));
     expect(() => guard.canActivate(ctx(req({ ...ip, cookies: { ct_vid: ids[3] } })))).toThrow(HttpException);

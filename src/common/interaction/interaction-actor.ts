@@ -40,15 +40,14 @@ export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID
 /**
  * IP real del cliente.
  *
- * El backend recibe los pedidos a través del proxy de Vercel (`/api/*`), así
- * que `req.ip` es la IP de Vercel — compartida por TODOS los visitantes. La
- * del cliente viaja en `x-forwarded-for` (primer valor de la lista, que Vercel
- * fija con la IP pública real).
+ * Con `trust proxy` configurado en `main.ts`, Express ya resuelve `req.ip` a
+ * la IP del visitante detrás de Vercel + Railway (de forma segura: descarta
+ * las entradas de `X-Forwarded-For` que agregó el propio cliente). Antes acá se
+ * leía a mano el primer valor de `X-Forwarded-For`, que el cliente puede
+ * inventar; ahora el rate limit global y el de interacciones usan la MISMA IP.
  */
 export function clientIp(req: Request): string {
-  const xff = req.headers['x-forwarded-for'];
-  const first = (Array.isArray(xff) ? xff[0] : xff)?.split(',')[0]?.trim();
-  return first || req.ip || req.socket?.remoteAddress || 'desconocida';
+  return req.ip || req.socket?.remoteAddress || 'desconocida';
 }
 
 const logger = new Logger('InteractionActor');

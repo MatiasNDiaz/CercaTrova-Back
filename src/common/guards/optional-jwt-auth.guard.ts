@@ -32,6 +32,13 @@ export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
    * corte la request.
    */
   handleRequest<TUser = unknown>(_err: unknown, user: TUser): TUser | null {
-    return user ?? null;
+    // ⚠️ Una cookie que no sirve (vencida/revocada) se trata como anónima pero
+    // NO se borra acá: estas rutas (`/tracking/*`, listados públicos) salen en
+    // paralelo con `/auth/me` en cada carga de página. Si la borraban ellas,
+    // `/auth/me` llegaba sin cookie, sin la cabecera `X-Session-Expired`, y el
+    // panel mandaba al login sin el aviso "Tu sesión expiró". La borra
+    // `JwtAuthGuard` (vía `/auth/me`, que el front consulta en toda página).
+    // `||` y no `??`: passport pasa `false` (no `undefined`) cuando no hay usuario.
+    return user || null;
   }
 }

@@ -45,6 +45,23 @@ export class AuthController {
     return this.authService.getMe(req.user.id);
   }
 
+  /**
+   * Borra la cookie de sesión de ESTE navegador, sin pedir sesión válida.
+   *
+   * Es la salida de emergencia de las pantallas de error del frontend
+   * ("Volver a iniciar sesión"): si la sesión quedó en un estado raro, el
+   * usuario no tiene que borrar cookies a mano. La cookie es httpOnly, así que
+   * solo el backend puede borrarla.
+   *
+   * No revoca nada en el servidor (para eso está `logout`, que sí exige sesión):
+   * solo limpia la cookie de quien lo llama — no afecta a ninguna otra sesión.
+   */
+  @Post('clear-session')
+  clearSession(@Res({ passthrough: true }) res: Response) {
+    clearAuthCookie(res);
+    return { message: 'Sesión local limpiada' };
+  }
+
   // 🔒 SEGURIDAD (punto 15): logout requiere sesión válida para poder
   // incrementar tokenVersion y revocar de verdad los tokens emitidos
   @UseGuards(JwtAuthGuard)
