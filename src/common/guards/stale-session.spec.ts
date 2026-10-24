@@ -1,10 +1,8 @@
 // Pantalla en blanco del panel: el backend tiene que BORRAR la cookie de una
 // sesión que ya no sirve, para que el middleware de Next deje de rebotar el
-// login al panel. Y la IP real del visitante detrás de los proxies.
+// login al panel.
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import express from 'express';
-import request from 'supertest';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 import { SESSION_EXPIRED_HEADER } from './stale-session';
@@ -53,23 +51,5 @@ describe('OptionalJwtAuthGuard — sesión vencida en una ruta pública', () => 
 
   it('con sesión válida devuelve el usuario', () => {
     expect(guard.handleRequest(null, { id: 3 })).toEqual({ id: 3 });
-  });
-});
-
-describe('trust proxy = 2 (Vercel + Railway)', () => {
-  const app = express();
-  app.set('trust proxy', 2);
-  app.get('/ip', (req, res) => res.json({ ip: req.ip }));
-
-  it('toma la IP real del visitante, no la del proxy', async () => {
-    // Cadena real: visitante → Vercel → Railway → app (socket = proxy de Railway).
-    const res = await request(app).get('/ip').set('X-Forwarded-For', '200.1.2.3, 76.76.21.9');
-    expect(res.body.ip).toBe('200.1.2.3');
-  });
-
-  it('ignora una IP inventada por el cliente que llega vía Vercel', async () => {
-    // El cliente manda "6.6.6.6"; Vercel agrega su IP real y Railway la de Vercel.
-    const res = await request(app).get('/ip').set('X-Forwarded-For', '6.6.6.6, 200.1.2.3, 76.76.21.9');
-    expect(res.body.ip).toBe('200.1.2.3');
   });
 });

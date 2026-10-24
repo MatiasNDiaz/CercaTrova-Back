@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { UsersModule } from './modules/users/users.module';
 import { PropertiesModule } from './modules/properties/properties.module';
 import { RequestsModule } from './modules/requests/requests.module';
@@ -82,8 +83,9 @@ import { StatisticsModule } from './modules/statistics/statistics.module';
   ],
   providers: [
     BootstrapService,
-    // 🔒 SEGURIDAD (M9): aplica el rate limiting a TODA la app
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // 🔒 SEGURIDAD (M9): aplica el rate limiting a TODA la app (salvo a las
+    // requests del servidor del front, ver AppThrottlerGuard)
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
   // Nota: Al ser el módulo raíz, no necesita 'controllers' ni 'providers' propios,
   // y rara vez tiene 'exports'.
