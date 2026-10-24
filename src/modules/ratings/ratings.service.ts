@@ -94,6 +94,7 @@ export class RatingsService {
         propertyId,
         score,
         relatedUserId: user?.id ?? null, // 👈
+        ratingId: saved.id,
       })
       .catch((err) => console.error('[NOTIF ADMIN] Error en valoración:', err));
 

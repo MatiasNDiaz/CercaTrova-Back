@@ -87,6 +87,7 @@ export class CommentsService {
         propertyId: property.id,
         commentPreview: dto.message,
         relatedUserId: user?.id ?? null, // 👈
+        commentId: saved.id,
       })
       .catch((err) => console.error('[NOTIF ADMIN] Error en comentario:', err));
 

@@ -10,6 +10,8 @@ import { EmailService } from './email/email.service';
 import { EmailTemplates } from './email/email-template';
 import { PropertyRequest, RequestStatus } from '../PropertyRequest/entities/PropertyRequest';
 import { NotificationType } from './enums/notification-type.enum';
+import { PropertyImages } from '../ImagesProperty/entities/ImagesPropertyEntity';
+import { FeedRow, NotificationFeedItem, toFeedItem } from './notification-feed';
 
 @Injectable()
 export class NotificationService {
@@ -442,10 +444,49 @@ export class NotificationService {
    * en `getForAdmin` solo las de gestión.
    */
   async getForUser(userId: number) {
-    return this.repo.find({
-      where: { user: { id: userId }, targetRole: 'user' },
-      order: { createdAt: 'DESC' },
-    });
+    return this.feed({ targetRole: 'user', userId });
+  }
+
+  /**
+   * Feed de notificaciones con la PROPIEDAD a la que apuntan: título, portada
+   * y si sigue disponible, para la miniatura del panel.
+   *
+   * Todo en UNA consulta: `LEFT JOIN` a la propiedad por `propertyId` y a su
+   * portada con una subconsulta correlacionada (la imagen marcada como portada
+   * o, si ninguna lo está, la primera del orden). Sin una consulta por
+   * notificación (N+1). Como resuelve por `propertyId`, funciona igual con las
+   * notificaciones viejas.
+   */
+  private async feed(
+    scope: { targetRole: 'admin' } | { targetRole: 'user'; userId: number },
+  ): Promise<NotificationFeedItem[]> {
+    const qb = this.repo
+      .createQueryBuilder('n')
+      .leftJoin(Property, 'p', 'p.id = n."propertyId"')
+      .leftJoin(
+        PropertyImages,
+        'img',
+        `img.id = (
+          SELECT i.id FROM property_images i
+          WHERE i."propertyId" = p.id
+          ORDER BY i."isCover" DESC, i."order" ASC, i.id ASC
+          LIMIT 1
+        )`,
+      )
+      .addSelect('p.id', 'feed_property_id')
+      .addSelect('p.title', 'feed_property_title')
+      .addSelect('p.status', 'feed_property_status')
+      .addSelect('img.url', 'feed_property_image')
+      .where('n."targetRole" = :role', { role: scope.targetRole })
+      .orderBy('n.createdAt', 'DESC');
+
+    if (scope.targetRole === 'user') {
+      qb.andWhere('n."userId" = :userId', { userId: scope.userId });
+    }
+
+    const { entities, raw } = await qb.getRawAndEntities<FeedRow>();
+    const rowById = new Map(raw.map((r) => [Number(r.n_id), r]));
+    return entities.map((n) => toFeedItem(n, rowById.get(n.id)));
   }
 
   // -----------------------------------------------------
@@ -522,6 +563,8 @@ export class NotificationService {
     propertyId?: number,
     relatedUserId?: number, // 👈
     emoji = '🔔',
+    // Comentario / valoración puntual: el panel enlaza directo a él.
+    target: { commentId?: number; ratingId?: number } = {},
   ) {
     const admins = await this.usersService.getAdminUsers();
     if (!admins.length) return;
@@ -535,6 +578,8 @@ export class NotificationService {
           message,
           propertyId: propertyId ?? null,
           relatedUserId: relatedUserId ?? null, // 👈
+          commentId: target.commentId ?? null,
+          ratingId: target.ratingId ?? null,
           targetRole: 'admin',
         }),
       ),
@@ -575,6 +620,7 @@ export class NotificationService {
     propertyId: number;
     commentPreview: string;
      relatedUserId: number; // 👈 agregar
+    commentId?: number;
   }) {
     await this.createAdminNotification(
       NotificationType.ADMIN_NUEVO_COMENTARIO,
@@ -583,6 +629,7 @@ export class NotificationService {
       data.propertyId,
          data.relatedUserId, // 👈
          '💬',
+      { commentId: data.commentId },
     );
   }
 
@@ -595,6 +642,7 @@ export class NotificationService {
     propertyId: number;
     score: number;
      relatedUserId: number; // 👈 agregar
+    ratingId?: number;
   }) {
     await this.createAdminNotification(
       NotificationType.ADMIN_NUEVA_VALORACION,
@@ -603,6 +651,7 @@ export class NotificationService {
       data.propertyId,
          data.relatedUserId, // 👈
          '⭐',
+      { ratingId: data.ratingId },
     );
   }
 
@@ -691,10 +740,7 @@ export class NotificationService {
   // GET para el admin
   // -----------------------------------------------------
   async getForAdmin() {
-    return this.repo.find({
-      where: { targetRole: 'admin' },
-      order: { createdAt: 'DESC' },
-    });
+    return this.feed({ targetRole: 'admin' });
   }
 
   // -----------------------------------------------------

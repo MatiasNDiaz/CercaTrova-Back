@@ -59,6 +59,17 @@ export class Notification {
   @Column({ nullable: true })   // 👈 única línea nueva
   relatedUserId: number;
 
+  /**
+   * Comentario / valoración puntual que originó la notificación. Con esto el
+   * panel lleva al detalle de la propiedad directo a ESE comentario
+   * (`#comentario-ID`) y lo resalta. Las notificaciones anteriores a estas
+   * columnas quedan en null y llevan a la sección (`#comentarios`).
+   */
+  @Column({ type: 'int', nullable: true })
+  commentId: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  ratingId: number | null;
 
   @CreateDateColumn()
   createdAt: Date;
